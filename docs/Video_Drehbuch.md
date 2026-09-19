@@ -35,7 +35,7 @@ ist also wirklich vergeben."
 
 ---
 
-**1:10–1:40 — Rollen (RBAC) und Korrigieren**
+**1:10–1:50 — Rollen (RBAC), Filtern, Korrigieren, Nachtragen**
 
 „Alle Mitarbeitenden ansehen" öffnen → Admin sieht alle Benutzer.
 Bei einem Eintrag auf **Bearbeiten**, Notiz oder Zeit ändern, speichern.
@@ -43,6 +43,17 @@ In der Liste steht danach „korrigiert von kiril am …".
 
 Sagen: „Die Korrektur überschreibt nichts – sie wird als eigener Datensatz
 angehängt. Wer wann was geändert hat, bleibt im Log nachvollziehbar."
+
+Dann kurz **filtern**: Benutzer auf `anna`, Aktion auf `PAUSE` → der Zähler
+springt auf „X von Y Eintraegen". Filter wirken auch kombiniert mit Datum
+von/bis und Notiztext.
+
+Und **Eintrag nachtragen** zeigen: Benutzer wählen, Zeitpunkt setzen,
+speichern → der Eintrag erscheint mit „nachgetragen von kiril".
+
+Sagen: „Wenn versehentlich etwas gelöscht wird, kann der Admin es für den
+Mitarbeitenden nachtragen – und es bleibt sichtbar, dass er es war."
+
 Kurz erwähnen: als `anna` (Rolle user) gibt es diesen Link nicht, und der
 direkte Aufruf von `/admin` gibt 403.
 

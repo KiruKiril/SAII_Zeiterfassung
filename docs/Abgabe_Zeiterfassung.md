@@ -17,7 +17,8 @@ Arbeitszeiten auch dann behält, wenn Kubernetes den Pod ersetzt.
 | Stempeln | `EIN → PAUSE → ZURÜCK → AUS` als Zustandsautomat im Server erzwungen |
 | Notiz | Freitext pro Stempelung (z.B. „Support KYZ Kunde Meyer"), max. 200 Zeichen |
 | Übersicht | Aktueller Status, heute erfasste Zeit, letzte 15 Stempelungen |
-| Benutzer | Login mit Rollen `user` / `admin`; Admin sieht alle Mitarbeitenden und kann Einträge korrigieren |
+| Benutzer | Login mit Rollen `user` / `admin` |
+| Admin-Ansicht | Filter nach Datum, Benutzer, Aktion und Notiztext; Einträge korrigieren, entfernen und für andere nachtragen |
 | Persistenz | Append-only JSONL unter `/data/times.jsonl` auf einem PVC |
 | Health | Getrennte Endpunkte `/health` (Liveness) und `/ready` (Readiness) |
 | Umgebungen | Kustomize `base` + Overlays `dev` und `prod` |
@@ -74,7 +75,7 @@ Jede Anforderung mit Umsetzung und Nachweis.
 | Kein Timing-Leak | Vergleich über `hmac.compare_digest` |
 | Keine Benutzer-Enumeration | Login-Fehler immer identisch („Login fehlgeschlagen.") |
 | Brute-Force-Bremse | Max. 5 Fehlversuche pro IP und Minute, danach HTTP 429 |
-| RBAC | Rolle `admin` erforderlich für `/admin` sowie für Korrigieren und Entfernen von Einträgen; `user` sieht ausschliesslich eigene Einträge und kann nichts fremdes ändern |
+| RBAC | Rolle `admin` erforderlich für `/admin` sowie für Korrigieren, Entfernen und Nachtragen; `user` sieht ausschliesslich eigene Einträge und kann nichts Fremdes ändern |
 | Session-Schutz | Cookie `HttpOnly`, `SameSite=Strict`, in Prod zusätzlich `Secure`; `SECRET_KEY` aus Secret |
 
 ### 2.3 Eingaben und Ausgaben
@@ -86,6 +87,8 @@ Jede Anforderung mit Umsetzung und Nachweis.
 | Kein unplausibler Zustand | Übergangstabelle serverseitig; z.B. zweimal `EIN` → 409 statt stiller Doppelbuchung |
 | XSS | Jinja2-Autoescaping, Notiz zusätzlich auf druckbare Zeichen und 200 Zeichen begrenzt |
 | Request-Grösse | `MAX_CONTENT_LENGTH = 16 KiB` |
+| Filterwerte geprüft | Nur bekannte Filterfelder werden gelesen, Datum gegen `YYYY-MM-DD` und Aktion gegen die Whitelist validiert – ungültige Werte werden verworfen, nicht weitergereicht |
+| Keine offene Weiterleitung | Nach dem Speichern wird das Ziel aus geprüften Einzelwerten neu gebaut, nie aus einer mitgegebenen URL |
 | Sicherheitsheader | `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, CSP `default-src 'self'` |
 
 ### 2.4 Secrets und Netzwerk
@@ -108,6 +111,9 @@ zu bringen – eine kaputte Zeile darf nicht die ganze Zeiterfassung blockieren.
 Auch Korrekturen durch den Admin überschreiben nichts. Eine Änderung wird als
 eigener Datensatz (`type: correction`) angehängt und erst beim Lesen auf den
 Originaleintrag angewendet; ein Entfernen ist ein `type: delete`-Datensatz.
+Ein vom Admin nachgetragener Eintrag trägt `created_by` und wird in der Liste
+als Nachtrag ausgewiesen – so bleibt unterscheidbar, was der Mitarbeitende
+selbst gestempelt hat und was jemand für ihn eingetragen hat.
 Damit bleibt jede Arbeitszeit-Änderung nachvollziehbar – wer sie wann gemacht
 hat, steht im Log und wird in der Admin-Ansicht angezeigt. Das ist bei
 Arbeitszeiten kein Detail, sondern die Voraussetzung dafür, dass die Erfassung
@@ -151,13 +157,14 @@ warten, den der alte noch hält, und der Rollout bliebe hängen.
 
 ## 4. Nachweis
 
-**Automatisierte Tests** – `python3 app/test_app.py`, 47 Tests, 0 Fehler:
+**Automatisierte Tests** – `python3 app/test_app.py`, 76 Tests, 0 Fehler:
 Health/Ready, Login inkl. Fehlversuch, CSRF-Ablehnung, alle vier Übergänge,
 unerlaubter Doppelübergang (409), unbekannte Aktion (400), JSONL-Persistenz,
 XSS-Escaping, Längenbegrenzung, RBAC (user → 403, admin → 200),
 Sicherheitsheader, `/ready` → 503 bei kaputtem Datenpfad bei gleichzeitig
 weiterhin gesundem `/health`, Admin-Korrekturen inklusive Nachweis, dass das
-Log wächst statt überschrieben zu werden.
+Log wächst statt überschrieben zu werden, Nachträge inklusive Kennzeichnung,
+sowie alle Filter einzeln und kombiniert.
 
 **Persistenz-Nachweis** – Container mit Volume gestartet, drei Stempelungen
 erzeugt, Container mit `docker rm -f` vollständig zerstört, neuer Container auf
@@ -183,3 +190,8 @@ Ehrlich benannt, statt sie zu verstecken:
    `SESSION_COOKIE_SECURE` in Prod aktiv und setzt HTTPS davor voraus.
 4. **Login-Bremse ist prozesslokal.** Bei mehreren Replicas zählt jeder Pod
    eigene Fehlversuche; produktiv gehörte das in einen gemeinsamen Speicher.
+5. **Nachträge prüfen die Reihenfolge nicht.** Ein Admin kann bewusst ein
+   zweites `EIN` einfügen, ohne dass der Zustandsautomat das verhindert – sonst
+   liesse sich eine kaputte Folge gar nicht erst reparieren. Der Status wird
+   weiterhin aus dem jüngsten Eintrag abgeleitet, eine inhaltliche Plausibilitäts-
+   prüfung über den ganzen Tag gibt es nicht.

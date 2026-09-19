@@ -172,6 +172,60 @@ def clean_note(raw):
     return "".join(ch for ch in note if ch.isprintable())
 
 
+FILTER_KEYS = ("von", "bis", "user", "action", "q")
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def current_filters(source):
+    """Liest nur bekannte Filterfelder - nichts aus der URL landet ungeprueft
+    in einer Weiterleitung."""
+    out = {}
+    for key in FILTER_KEYS:
+        val = (source.get(key) or "").strip()[:64]
+        if not val:
+            continue
+        if key in ("von", "bis") and not DATE_RE.match(val):
+            continue
+        if key == "action" and val not in ACTIONS:
+            continue
+        out[key] = val
+    return out
+
+
+def apply_filters(entries, f):
+    von, bis = f.get("von"), f.get("bis")
+    user, action = f.get("user"), f.get("action")
+    needle = (f.get("q") or "").lower()
+    out = []
+    for e in entries:
+        day = (e.get("ts") or "")[:10]
+        if von and day < von:
+            continue
+        if bis and day > bis:
+            continue
+        if user and e.get("user") != user:
+            continue
+        if action and e.get("action") != action:
+            continue
+        if needle and needle not in (e.get("note") or "").lower():
+            continue
+        out.append(e)
+    return out
+
+
+def known_users(entries):
+    return sorted(set(USERS) | {e.get("user") for e in entries if e.get("user")})
+
+
+def parse_form_ts(raw):
+    """datetime-local liefert 'YYYY-MM-DDTHH:MM'. Gibt None bei Unsinn."""
+    try:
+        return datetime.fromisoformat((raw or "").strip()).replace(
+            tzinfo=timezone.utc).isoformat()
+    except ValueError:
+        return None
+
+
 def current_status(user):
     for rec in read_entries(user):
         action = rec.get("action")
@@ -365,9 +419,65 @@ def check_csrf():
 @login_required
 @admin_required
 def admin():
+    f = current_filters(request.args)
+    alle = read_entries()
+    treffer = apply_filters(alle, f)
     return render_template_string(
-        ADMIN_HTML, entries=read_entries(limit=100), user=session["user"],
+        ADMIN_HTML, entries=treffer[:200], gesamt=len(alle), treffer=len(treffer),
+        f=f, users=known_users(alle), actions=ACTIONS, user=session["user"],
         csrf=csrf_token())
+
+
+@app.get("/admin/nachtragen")
+@login_required
+@admin_required
+def new_form():
+    f = current_filters(request.args)
+    vorgabe = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M")
+    return render_template_string(
+        NEW_HTML, users=known_users(read_entries()), actions=ACTIONS,
+        csrf=csrf_token(), f=f, error=None,
+        vals={"user": "", "action": "EIN", "ts": vorgabe, "note": ""})
+
+
+@app.post("/admin/nachtragen")
+@login_required
+@admin_required
+def new_apply():
+    check_csrf()
+    f = current_filters(request.form)
+    vals = {
+        "user": (request.form.get("target_user") or "").strip().lower(),
+        "action": (request.form.get("action") or "").upper(),
+        "ts": (request.form.get("ts") or "").strip(),
+        "note": clean_note(request.form.get("note")),
+    }
+
+    def fehler(msg):
+        return render_template_string(
+            NEW_HTML, users=known_users(read_entries()), actions=ACTIONS,
+            csrf=csrf_token(), f=f, error=msg, vals=vals), 400
+
+    if not USER_RE.match(vals["user"]):
+        return fehler("Bitte einen gueltigen Benutzer waehlen.")
+    if vals["action"] not in ACTIONS:
+        return fehler("Unbekannte Aktion.")
+    ts = parse_form_ts(vals["ts"])
+    if ts is None:
+        return fehler("Ungueltiges Datum. Erwartet wird Datum und Uhrzeit.")
+
+    # Nachtrag ist eine normale Stempelung, aber als solche gekennzeichnet -
+    # damit bleibt sichtbar, dass sie nicht vom Benutzer selbst stammt.
+    append_entry({
+        "id": uuid.uuid4().hex[:12],
+        "ts": ts,
+        "user": vals["user"],
+        "action": vals["action"],
+        "note": vals["note"],
+        "created_by": session["user"],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return redirect(url_for("admin", **f))
 
 
 @app.get("/admin/bearbeiten/<entry_id>")
@@ -378,7 +488,8 @@ def edit_form(entry_id):
     if entry is None:
         abort(404)
     return render_template_string(
-        EDIT_HTML, e=entry, actions=ACTIONS, csrf=csrf_token(), error=None)
+        EDIT_HTML, e=entry, actions=ACTIONS, csrf=csrf_token(),
+        f=current_filters(request.args), error=None)
 
 
 @app.post("/admin/bearbeiten/<entry_id>")
@@ -389,18 +500,16 @@ def edit_apply(entry_id):
     entry = find_entry(entry_id)
     if entry is None:
         abort(404)
+    f = current_filters(request.form)
 
     action = (request.form.get("action") or "").upper()
     if action not in ACTIONS:
         abort(400)
 
-    # Zeitstempel kommt als "YYYY-MM-DDTHH:MM" aus dem datetime-local-Feld.
-    raw_ts = (request.form.get("ts") or "").strip()
-    try:
-        ts = datetime.fromisoformat(raw_ts).replace(tzinfo=timezone.utc).isoformat()
-    except ValueError:
+    ts = parse_form_ts(request.form.get("ts"))
+    if ts is None:
         return render_template_string(
-            EDIT_HTML, e=entry, actions=ACTIONS, csrf=csrf_token(),
+            EDIT_HTML, e=entry, actions=ACTIONS, csrf=csrf_token(), f=f,
             error="Ungueltiges Datum. Erwartet wird Datum und Uhrzeit."), 400
 
     # Append-only: die Korrektur wird angehaengt, der Originaleintrag bleibt stehen.
@@ -413,7 +522,7 @@ def edit_apply(entry_id):
         "by": session["user"],
         "at": datetime.now(timezone.utc).isoformat(),
     })
-    return redirect(url_for("admin"))
+    return redirect(url_for("admin", **f))
 
 
 @app.post("/admin/loeschen/<entry_id>")
@@ -430,7 +539,7 @@ def delete_entry(entry_id):
         "by": session["user"],
         "at": datetime.now(timezone.utc).isoformat(),
     })
-    return redirect(url_for("admin"))
+    return redirect(url_for("admin", **current_filters(request.form)))
 
 
 # --------------------------------------------------------------------------
@@ -457,6 +566,10 @@ button.small{padding:.25rem .6rem;font-size:.8rem}
 button.danger{border-color:#b91c1c;background:#b91c1c}
 .tag{font-size:.72rem;color:#6b7280;display:block}
 select{font:inherit;padding:.5rem;border-radius:.4rem;border:1px solid #9ca3af;width:100%}
+.filter{display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:.6rem;align-items:end}
+.filter label{font-size:.8rem;color:#6b7280}
+.filter input,.filter select{width:100%;margin-top:.15rem}
+.count{font-size:.85rem;color:#6b7280;margin:.4rem 0}
 """
 
 LOGIN_HTML = """<!doctype html><html lang=de><meta charset=utf-8>
@@ -506,8 +619,37 @@ INDEX_HTML = """<!doctype html><html lang=de><meta charset=utf-8>
 ADMIN_HTML = """<!doctype html><html lang=de><meta charset=utf-8>
 <title>Zeiterfassung - Admin</title><style>""" + CSS + """</style>
 <h1>Alle Stempelungen</h1>
-<p class=muted>Angemeldet als {{ user }} (admin) &middot; Korrekturen werden protokolliert,
-nicht ueberschrieben.</p>
+<p class=muted>Angemeldet als {{ user }} (admin) &middot; Korrekturen und Nachtraege
+werden protokolliert, nicht ueberschrieben.</p>
+
+<div class=card>
+  <form method=get class=filter>
+    <div><label>Von<input type=date name=von value="{{ f.von or '' }}"></label></div>
+    <div><label>Bis<input type=date name=bis value="{{ f.bis or '' }}"></label></div>
+    <div><label>Benutzer<select name=user>
+      <option value="">alle</option>
+      {% for u in users %}
+      <option value="{{ u }}" {% if f.user == u %}selected{% endif %}>{{ u }}</option>
+      {% endfor %}
+    </select></label></div>
+    <div><label>Aktion<select name=action>
+      <option value="">alle</option>
+      {% for a in actions %}
+      <option value="{{ a }}" {% if f.action == a %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select></label></div>
+    <div><label>Notiz enthaelt<input name=q value="{{ f.q or '' }}" maxlength=64></label></div>
+    <div class=row>
+      <button type=submit>Filtern</button>
+      <a href="{{ url_for('admin') }}"><button class=ghost type=button>Zuruecksetzen</button></a>
+    </div>
+  </form>
+  <p class=count>{{ treffer }} von {{ gesamt }} Eintraegen
+    {%- if treffer > 200 %} (die ersten 200 werden angezeigt){% endif %}</p>
+</div>
+
+<p><a href="{{ url_for('new_form', **f) }}"><button type=button>Eintrag nachtragen</button></a></p>
+
 <div class=card>
 {% if entries %}
 <table>
@@ -515,22 +657,57 @@ nicht ueberschrieben.</p>
 {% for e in entries %}
   <tr>
     <td>{{ e.ts[:19].replace('T',' ') }}
+      {% if e.created_by %}<span class=tag>nachgetragen von {{ e.created_by }}</span>{% endif %}
       {% if e.edited_by %}<span class=tag>korrigiert von {{ e.edited_by }}
         am {{ e.edited_at[:16].replace('T',' ') }}</span>{% endif %}</td>
     <td>{{ e.user }}</td><td>{{ e.action }}</td><td>{{ e.note }}</td>
     <td><div class=row>
-      <a href="{{ url_for('edit_form', entry_id=e.id) }}"><button class="ghost small"
+      <a href="{{ url_for('edit_form', entry_id=e.id, **f) }}"><button class="ghost small"
          type=button>Bearbeiten</button></a>
       <form method=post action="{{ url_for('delete_entry', entry_id=e.id) }}"
             onsubmit="return confirm('Diesen Eintrag wirklich entfernen?')">
         <input type=hidden name=csrf value="{{ csrf }}">
+        {% for k, v in f.items() %}<input type=hidden name="{{ k }}" value="{{ v }}">{% endfor %}
         <button class="danger small" type=submit>Loeschen</button></form>
     </div></td>
   </tr>
 {% endfor %}</table>
-{% else %}<p class=muted>Noch keine Eintraege.</p>{% endif %}
+{% else %}<p class=muted>Keine Eintraege fuer diesen Filter.</p>{% endif %}
 </div>
 <p><a href="{{ url_for('index') }}">Zurueck</a></p></html>"""
+
+NEW_HTML = """<!doctype html><html lang=de><meta charset=utf-8>
+<title>Eintrag nachtragen</title><style>""" + CSS + """</style>
+<h1>Eintrag nachtragen</h1>
+<p class=muted>Fuer versehentlich geloeschte oder vergessene Stempelungen.</p>
+{% if error %}<p class=err>{{ error }}</p>{% endif %}
+<form method=post class=card>
+  <input type=hidden name=csrf value="{{ csrf }}">
+  {% for k, v in f.items() %}<input type=hidden name="{{ k }}" value="{{ v }}">{% endfor %}
+  <p><label>Benutzer<br>
+    <select name=target_user>
+      <option value="">bitte waehlen</option>
+      {% for u in users %}
+      <option value="{{ u }}" {% if vals.user == u %}selected{% endif %}>{{ u }}</option>
+      {% endfor %}
+    </select></label></p>
+  <p><label>Aktion<br>
+    <select name=action>
+      {% for a in actions %}
+      <option value="{{ a }}" {% if vals.action == a %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select></label></p>
+  <p><label>Zeitpunkt (UTC)<br>
+    <input type="datetime-local" name=ts value="{{ vals.ts }}"></label></p>
+  <p><label>Notiz<br>
+    <input name=note maxlength=200 value="{{ vals.note }}"></label></p>
+  <div class=row>
+    <button type=submit>Eintrag anlegen</button>
+    <a href="{{ url_for('admin', **f) }}"><button class=ghost type=button>Abbrechen</button></a>
+  </div>
+</form>
+<p class=muted>Der Eintrag wird als Nachtrag gekennzeichnet; in der Liste steht,
+wer ihn angelegt hat.</p></html>"""
 
 EDIT_HTML = """<!doctype html><html lang=de><meta charset=utf-8>
 <title>Eintrag bearbeiten</title><style>""" + CSS + """</style>
@@ -539,6 +716,7 @@ EDIT_HTML = """<!doctype html><html lang=de><meta charset=utf-8>
 {% if error %}<p class=err>{{ error }}</p>{% endif %}
 <form method=post class=card>
   <input type=hidden name=csrf value="{{ csrf }}">
+  {% for k, v in f.items() %}<input type=hidden name="{{ k }}" value="{{ v }}">{% endfor %}
   <p><label>Aktion<br>
     <select name=action>
       {% for a in actions %}
@@ -551,7 +729,7 @@ EDIT_HTML = """<!doctype html><html lang=de><meta charset=utf-8>
     <input name=note maxlength=200 value="{{ e.note }}"></label></p>
   <div class=row>
     <button type=submit>Korrektur speichern</button>
-    <a href="{{ url_for('admin') }}"><button class=ghost type=button>Abbrechen</button></a>
+    <a href="{{ url_for('admin', **f) }}"><button class=ghost type=button>Abbrechen</button></a>
   </div>
 </form>
 <p class=muted>Die Aenderung wird als Korrektur angehaengt. Der urspruengliche

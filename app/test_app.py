@@ -120,5 +120,75 @@ ok("Sichtbare Eintraege um 1 weniger", len(A.read_entries()) == before_del - 1)
 ok("Datei enthaelt den Eintrag weiterhin",
    any(x.get("id") == eid for x in A.read_raw()))
 
+
+# --- Admin kann Eintraege nachtragen --------------------------------------
+adm2 = c2.get("/admin").get_data(as_text=True)
+tok3 = _re.search(r'name=csrf value="([^"]+)"', adm2).group(1)
+
+ok("Nachtragen-Button vorhanden", "Eintrag nachtragen" in adm2)
+ok("user kommt nicht ans Nachtragen", c.get("/admin/nachtragen").status_code == 403)
+ok("admin oeffnet Nachtragen", c2.get("/admin/nachtragen").status_code == 200)
+
+vorher = len(A.read_entries("kiril"))
+r = c2.post("/admin/nachtragen", data={
+    "target_user": "kiril", "action": "EIN", "ts": "2026-09-18T07:15",
+    "note": "vergessen einzustempeln", "csrf": tok3})
+ok("Nachtrag akzeptiert", r.status_code == 302)
+ok("Eintrag bei kiril angekommen", len(A.read_entries("kiril")) == vorher + 1)
+
+nach = [e for e in A.read_entries("kiril") if e.get("note") == "vergessen einzustempeln"]
+ok("Nachtrag ist gekennzeichnet", bool(nach) and nach[0]["created_by"] == "chef")
+ok("Nachtrag traegt den gewaehlten Zeitpunkt", nach[0]["ts"].startswith("2026-09-18T07:15"))
+ok("Kennzeichnung sichtbar in der Liste",
+   "nachgetragen von chef" in c2.get("/admin").get_data(as_text=True))
+
+ok("Nachtrag ohne CSRF -> 403", c2.post("/admin/nachtragen", data={
+    "target_user": "kiril", "action": "EIN", "ts": "2026-09-18T07:15"}).status_code == 403)
+ok("unbekannter Benutzer -> 400", c2.post("/admin/nachtragen", data={
+    "target_user": "!!", "action": "EIN", "ts": "2026-09-18T07:15", "csrf": tok3}).status_code == 400)
+ok("ungueltige Aktion -> 400", c2.post("/admin/nachtragen", data={
+    "target_user": "kiril", "action": "XX", "ts": "2026-09-18T07:15", "csrf": tok3}).status_code == 400)
+ok("ungueltiges Datum -> 400", c2.post("/admin/nachtragen", data={
+    "target_user": "kiril", "action": "EIN", "ts": "morgen", "csrf": tok3}).status_code == 400)
+ok("user darf nicht nachtragen", c.post("/admin/nachtragen", data={
+    "target_user": "anna", "action": "EIN", "ts": "2026-09-18T07:15",
+    "csrf": token}).status_code == 403)
+
+# --- Filter ----------------------------------------------------------------
+alle = len(A.read_entries())
+ok("ohne Filter alle Eintraege", len(A.apply_filters(A.read_entries(), {})) == alle)
+ok("Filter Benutzer", all(e["user"] == "kiril"
+   for e in A.apply_filters(A.read_entries(), {"user": "kiril"})))
+ok("Filter Aktion", all(e["action"] == "EIN"
+   for e in A.apply_filters(A.read_entries(), {"action": "EIN"})))
+ok("Filter von-Datum", all(e["ts"][:10] >= "2026-09-19"
+   for e in A.apply_filters(A.read_entries(), {"von": "2026-09-19"})))
+ok("Filter bis-Datum", all(e["ts"][:10] <= "2026-09-18"
+   for e in A.apply_filters(A.read_entries(), {"bis": "2026-09-18"})))
+ok("Filter Notiztext", all("vergessen" in e["note"].lower()
+   for e in A.apply_filters(A.read_entries(), {"q": "vergessen"})))
+ok("Filter kombiniert", all(e["user"] == "kiril" and e["action"] == "EIN"
+   for e in A.apply_filters(A.read_entries(), {"user": "kiril", "action": "EIN"})))
+ok("Filter ohne Treffer gibt leere Liste",
+   A.apply_filters(A.read_entries(), {"user": "niemand"}) == [])
+
+ok("Muellwerte werden verworfen",
+   A.current_filters({"von": "kaputt", "action": "XX", "user": "kiril"}) == {"user": "kiril"})
+ok("gueltige Werte bleiben",
+   A.current_filters({"von": "2026-09-01", "action": "EIN"}) == {"von": "2026-09-01", "action": "EIN"})
+
+resp = c2.get("/admin?user=kiril&action=EIN")
+html = resp.get_data(as_text=True)
+erwartet = len(A.apply_filters(A.read_entries(), {"user": "kiril", "action": "EIN"}))
+ok("Filter ueber die URL liefert 200", resp.status_code == 200)
+ok("Zaehler nennt die Trefferzahl",
+   "%d von %d Eintraegen" % (erwartet, len(A.read_entries())) in html)
+ok("Benutzerfilter bleibt gewaehlt", '<option value="kiril" selected>' in html)
+ok("Aktionsfilter bleibt gewaehlt", '<option value="EIN" selected>' in html)
+ok("gefilterte Liste zeigt nur diese Aktion", html.count("<td>PAUSE</td>") == 0)
+
+leer = c2.get("/admin?user=niemand").get_data(as_text=True)
+ok("leerer Filter zeigt Hinweis", "Keine Eintraege fuer diesen Filter" in leer)
+
 print("\n%d Fehler" % len(fails))
 sys.exit(1 if fails else 0)

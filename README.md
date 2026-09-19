@@ -20,7 +20,7 @@ Dann **http://localhost:8080** im Browser öffnen.
 
 | Benutzer | Passwort | Rolle |
 |---|---|---|
-| `kiril` | `geheim123` | admin (sieht alle Mitarbeitenden, kann Eintraege korrigieren) |
+| `kiril` | `geheim123` | admin (sieht alle Mitarbeitenden, filtert, korrigiert, traegt nach) |
 | `anna` | `anna123` | user (sieht nur eigene Einträge) |
 
 Beenden mit `docker compose down`. Die Daten bleiben im benannten Volume;
@@ -92,19 +92,28 @@ python3 -m venv .venv && .venv/bin/pip install -r app/requirements.txt
 .venv/bin/python app/test_app.py
 ```
 
-47 Tests: Health/Ready, Login inkl. Fehlversuch, CSRF-Ablehnung, alle vier
+76 Tests: Health/Ready, Login inkl. Fehlversuch, CSRF-Ablehnung, alle vier
 Zustandsübergänge, unerlaubter Doppelübergang (409), unbekannte Aktion (400),
 JSONL-Persistenz, XSS-Escaping, Längenbegrenzung, RBAC (user → 403,
 admin → 200), Sicherheitsheader, `/ready` → 503 bei kaputtem Datenpfad bei
 gleichzeitig gesundem `/health`, Admin-Korrekturen und -Loeschungen.
 
-## Korrigieren als Admin
+## Admin-Ansicht
 
-Als `kiril` unter „Alle Mitarbeitenden ansehen" hat jeder Eintrag
-**Bearbeiten** und **Loeschen**. Beides ueberschreibt nichts: die Aenderung
-wird als Korrektur-Datensatz angehaengt und erst beim Lesen angewendet. In der
-Admin-Liste steht danach, wer wann korrigiert hat. Das Log bleibt damit
-vollstaendig und die Arbeitszeit-Aenderung nachvollziehbar.
+Als `kiril` unter „Alle Mitarbeitenden ansehen":
+
+**Filtern** nach Datum von/bis, Benutzer, Aktion und Notiztext – einzeln oder
+kombiniert. Der Zaehler zeigt „X von Y Eintraegen"; der Filter bleibt beim
+Bearbeiten, Loeschen und Nachtragen erhalten.
+
+**Bearbeiten** und **Loeschen** jedes Eintrags. Beides ueberschreibt nichts:
+die Aenderung wird als Korrektur-Datensatz angehaengt und erst beim Lesen
+angewendet. In der Liste steht danach, wer wann korrigiert hat.
+
+**Eintrag nachtragen** fuer einen beliebigen Benutzer – etwa wenn versehentlich
+etwas geloescht oder das Stempeln vergessen wurde. Solche Eintraege sind in der
+Liste als „nachgetragen von …" gekennzeichnet, damit sie nicht mit einer
+Selbsterfassung verwechselt werden.
 
 ---
 
