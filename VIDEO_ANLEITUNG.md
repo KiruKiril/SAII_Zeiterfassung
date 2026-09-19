@@ -43,7 +43,16 @@ Die Datei landet als `.mov` auf dem Schreibtisch.
 
 ---
 
-## 3. Was du zeigst
+## 3. Zugangsdaten
+
+| Benutzer | Passwort | Rolle |
+|---|---|---|
+| `kiril` | `geheim123` | admin – filtern, korrigieren, nachtragen |
+| `anna` | `anna123` | user – sieht nur eigene Eintraege |
+
+---
+
+## 4. Was du zeigst
 
 Der genaue Ablauf mit Zeitmarken steht in `docs/Video_Drehbuch.md`.
 Kurzfassung:
@@ -58,14 +67,14 @@ Kurzfassung:
 
 ---
 
-## 4. Kürzen, falls zu lang
+## 5. Kürzen, falls zu lang
 
 QuickTime Player öffnen (Doppelklick auf die `.mov`), dann **Cmd + T**.
 Die gelben Griffe links und rechts ziehen, **Trimmen** klicken, **Cmd + S** sichern.
 
 ---
 
-## 5. Umwandeln und ins ZIP packen
+## 6. Umwandeln und ins ZIP packen
 
 ```bash
 ./video-fertigstellen.sh ~/Desktop/Bildschirmaufnahme.mov
