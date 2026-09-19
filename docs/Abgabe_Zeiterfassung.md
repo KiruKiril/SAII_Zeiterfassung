@@ -17,8 +17,9 @@ Arbeitszeiten auch dann behält, wenn Kubernetes den Pod ersetzt.
 | Stempeln | `EIN → PAUSE → ZURÜCK → AUS` als Zustandsautomat im Server erzwungen |
 | Notiz | Freitext pro Stempelung (z.B. „Support KYZ Kunde Meyer"), max. 200 Zeichen |
 | Übersicht | Aktueller Status, heute erfasste Zeit, letzte 15 Stempelungen |
+| Zeitzone | Speicherung in UTC, Anzeige und Eingabe in Ortszeit (`Europe/Zurich`) |
 | Benutzer | Login mit Rollen `user` / `admin` |
-| Admin-Ansicht | Filter nach Datum, Benutzer, Aktion und Notiztext; Einträge korrigieren, entfernen und für andere nachtragen |
+| Admin-Ansicht | Filter nach Datum, Benutzer, Aktion und Notiztext; erfasste Zeit je Benutzer im Zeitraum; Einträge korrigieren, entfernen und für andere nachtragen |
 | Persistenz | Append-only JSONL unter `/data/times.jsonl` auf einem PVC |
 | Health | Getrennte Endpunkte `/health` (Liveness) und `/ready` (Readiness) |
 | Umgebungen | Kustomize `base` + Overlays `dev` und `prod` |
@@ -157,7 +158,7 @@ warten, den der alte noch hält, und der Rollout bliebe hängen.
 
 ## 4. Nachweis
 
-**Automatisierte Tests** – `python3 app/test_app.py`, 76 Tests, 0 Fehler:
+**Automatisierte Tests** – `python3 app/test_app.py`, 95 Tests, 0 Fehler:
 Health/Ready, Login inkl. Fehlversuch, CSRF-Ablehnung, alle vier Übergänge,
 unerlaubter Doppelübergang (409), unbekannte Aktion (400), JSONL-Persistenz,
 XSS-Escaping, Längenbegrenzung, RBAC (user → 403, admin → 200),
@@ -165,6 +166,15 @@ Sicherheitsheader, `/ready` → 503 bei kaputtem Datenpfad bei gleichzeitig
 weiterhin gesundem `/health`, Admin-Korrekturen inklusive Nachweis, dass das
 Log wächst statt überschrieben zu werden, Nachträge inklusive Kennzeichnung,
 sowie alle Filter einzeln und kombiniert.
+
+Zwei Fehler wurden dabei durch Tests aufgedeckt und behoben. Erstens führte ein
+`GET` auf eine reine `POST`-Route – etwa nach *Zurück* oder *Neu laden* im
+Browser – zu einer nackten `405`-Seite ohne Rückweg; jetzt erscheint eine
+Seite mit Link zurück. Zweitens verschluckte die Tagessumme Zeit, wenn zweimal
+`EIN` ohne Ende dazwischen im Log stand: der laufende Startzeitpunkt wurde
+überschrieben statt das offene Intervall zu schliessen. Genau das kann durch
+einen Nachtrag entstehen, und die korrigierte Zeit erschien dann nicht in
+„heute erfasst".
 
 **Persistenz-Nachweis** – Container mit Volume gestartet, drei Stempelungen
 erzeugt, Container mit `docker rm -f` vollständig zerstört, neuer Container auf
@@ -186,11 +196,13 @@ Ehrlich benannt, statt sie zu verstecken:
    oder – besser – eine echte Datenbank statt einer Datei.
 2. **JSONL ist keine Datenbank.** Für den Kursumfang passend, aber ohne
    Indizes und Transaktionen; bei vielen Mitarbeitenden wird das Lesen linear teuer.
-3. **Kein TLS im Cluster.** Verschlüsselung gehört an den Ingress; deshalb ist
+3. **Zeitzone ist fest auf `Europe/Zurich`.** Für einen Betrieb über mehrere
+   Länder müsste sie pro Benutzer hinterlegt werden.
+4. **Kein TLS im Cluster.** Verschlüsselung gehört an den Ingress; deshalb ist
    `SESSION_COOKIE_SECURE` in Prod aktiv und setzt HTTPS davor voraus.
-4. **Login-Bremse ist prozesslokal.** Bei mehreren Replicas zählt jeder Pod
+5. **Login-Bremse ist prozesslokal.** Bei mehreren Replicas zählt jeder Pod
    eigene Fehlversuche; produktiv gehörte das in einen gemeinsamen Speicher.
-5. **Nachträge prüfen die Reihenfolge nicht.** Ein Admin kann bewusst ein
+6. **Nachträge prüfen die Reihenfolge nicht.** Ein Admin kann bewusst ein
    zweites `EIN` einfügen, ohne dass der Zustandsautomat das verhindert – sonst
    liesse sich eine kaputte Folge gar nicht erst reparieren. Der Status wird
    weiterhin aus dem jüngsten Eintrag abgeleitet, eine inhaltliche Plausibilitäts-

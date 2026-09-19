@@ -92,7 +92,7 @@ python3 -m venv .venv && .venv/bin/pip install -r app/requirements.txt
 .venv/bin/python app/test_app.py
 ```
 
-76 Tests: Health/Ready, Login inkl. Fehlversuch, CSRF-Ablehnung, alle vier
+95 Tests: Health/Ready, Login inkl. Fehlversuch, CSRF-Ablehnung, alle vier
 Zustandsübergänge, unerlaubter Doppelübergang (409), unbekannte Aktion (400),
 JSONL-Persistenz, XSS-Escaping, Längenbegrenzung, RBAC (user → 403,
 admin → 200), Sicherheitsheader, `/ready` → 503 bei kaputtem Datenpfad bei
@@ -110,6 +110,9 @@ Bearbeiten, Loeschen und Nachtragen erhalten.
 die Aenderung wird als Korrektur-Datensatz angehaengt und erst beim Lesen
 angewendet. In der Liste steht danach, wer wann korrigiert hat.
 
+Unter der Filterleiste steht die **erfasste Zeit je Benutzer** im gewaehlten
+Zeitraum – so ist direkt sichtbar, wie sich eine Korrektur auswirkt.
+
 **Eintrag nachtragen** fuer einen beliebigen Benutzer – etwa wenn versehentlich
 etwas geloescht oder das Stempeln vergessen wurde. Solche Eintraege sind in der
 Liste als „nachgetragen von …" gekennzeichnet, damit sie nicht mit einer
@@ -126,6 +129,14 @@ Selbsterfassung verwechselt werden.
 
 Getrennt, damit ein volles oder falsch berechtigtes Volume den Pod nicht in
 einen CrashLoopBackOff schickt, sondern nur aus dem Service nimmt.
+
+---
+
+## Zeitzone
+
+Gespeichert wird immer UTC, angezeigt und eingegeben wird Ortszeit
+(`Europe/Zurich`, ueber `ZE_TZ` aenderbar). Die Tagesgrenze fuer „heute
+erfasst" und fuer den Datumsfilter richtet sich ebenfalls nach Ortszeit.
 
 ---
 

@@ -93,7 +93,7 @@ ok("Originalzeile noch im Log",
 upd = A.find_entry(eid)
 ok("Aktion korrigiert", upd["action"] == "AUS")
 ok("Notiz korrigiert", upd["note"] == "korrigiert")
-ok("Zeit korrigiert", upd["ts"].startswith("2026-09-19T08:30"))
+ok("Zeit korrigiert (Eingabe war Ortszeit)", A.input_local(upd["ts"]) == "2026-09-19T08:30")
 ok("Korrektur ist zugeordnet", upd["edited_by"] == "chef")
 
 ok("Korrektur ohne CSRF -> 403",
@@ -138,7 +138,7 @@ ok("Eintrag bei kiril angekommen", len(A.read_entries("kiril")) == vorher + 1)
 
 nach = [e for e in A.read_entries("kiril") if e.get("note") == "vergessen einzustempeln"]
 ok("Nachtrag ist gekennzeichnet", bool(nach) and nach[0]["created_by"] == "chef")
-ok("Nachtrag traegt den gewaehlten Zeitpunkt", nach[0]["ts"].startswith("2026-09-18T07:15"))
+ok("Nachtrag traegt den gewaehlten Zeitpunkt", A.input_local(nach[0]["ts"]) == "2026-09-18T07:15")
 ok("Kennzeichnung sichtbar in der Liste",
    "nachgetragen von chef" in c2.get("/admin").get_data(as_text=True))
 
@@ -189,6 +189,79 @@ ok("gefilterte Liste zeigt nur diese Aktion", html.count("<td>PAUSE</td>") == 0)
 
 leer = c2.get("/admin?user=niemand").get_data(as_text=True)
 ok("leerer Filter zeigt Hinweis", "Keine Eintraege fuer diesen Filter" in leer)
+
+
+# --- Kein Sackgassen-Fehler mehr bei GET auf POST-Routen ------------------
+from datetime import datetime as _dt, timezone as _tz
+for pfad in ("/stempeln", "/logout"):
+    resp = c.get(pfad)
+    ok("GET %s zeigt Rueckweg" % pfad,
+       resp.status_code == 405 and "Zurueck zur Zeiterfassung" in resp.get_data(as_text=True))
+ok("unbekannte Seite zeigt Rueckweg",
+   "Zurueck zur Zeiterfassung" in c.get("/gibtsnicht").get_data(as_text=True))
+
+# --- Ortszeit statt UTC ----------------------------------------------------
+utc_iso = "2026-07-01T06:30:00+00:00"          # Sommerzeit: Zuerich = UTC+2
+ok("Anzeige in Ortszeit", A.fmt_local(utc_iso) == "01.07.2026 08:30")
+ok("Formularwert in Ortszeit", A.input_local(utc_iso) == "2026-07-01T08:30")
+ok("Formulareingabe wird als Ortszeit gelesen",
+   A.parse_form_ts("2026-07-01T08:30") == utc_iso)
+ok("Hin und zurueck bleibt gleich",
+   A.parse_form_ts(A.input_local(utc_iso)) == utc_iso)
+ok("Winterzeit ist UTC+1", A.fmt_local("2026-01-15T07:00:00+00:00") == "15.01.2026 08:00")
+ok("Tag richtet sich nach Ortszeit",
+   A.local_day("2026-07-01T23:30:00+00:00") == "2026-07-02")
+ok("kaputter Zeitstempel bricht nicht ab", A.fmt_local("unsinn") == "?")
+
+# --- Arbeitszeit: Korrektur wirkt sich aus --------------------------------
+heute = _dt.now(A.TZ).date().isoformat()
+c3 = A.app.test_client(); c3.post("/login", data={"user": "kiril", "password": "geheim123"})
+tok4 = _re.search(r'name=csrf value="([^"]+)"', c3.get("/").get_data(as_text=True)).group(1)
+c3.post("/stempeln", data={"action": "AUS", "csrf": tok4})      # sauberer Ausgangszustand
+c3.post("/stempeln", data={"action": "EIN", "csrf": tok4})
+vorher = A.worked_seconds_today("kiril")
+
+neu = [e for e in A.read_entries("kiril") if e["action"] == "EIN"][0]
+adm3 = c2.get("/admin").get_data(as_text=True)
+tok5 = _re.search(r'name=csrf value="([^"]+)"', adm3).group(1)
+c2.post("/admin/bearbeiten/" + neu["id"],
+        data={"action": "EIN", "ts": heute + "T06:00", "note": "", "csrf": tok5})
+nachher = A.worked_seconds_today("kiril")
+ok("Tagessumme waechst nach Start-Korrektur", nachher > vorher + 3000)
+ok("Startseite zeigt die neue Summe",
+   A.hhmm(nachher) in c3.get("/").get_data(as_text=True))
+
+# --- Admin sieht die Zeit des betroffenen Benutzers ------------------------
+seite = c2.get("/admin?user=kiril").get_data(as_text=True)
+ok("Admin-Ansicht nennt erfasste Zeit", "Erfasste Zeit im Zeitraum" in seite)
+ok("Admin sieht kirils Summe, nicht die eigene",
+   ("<b>kiril</b> " + A.hhmm(A.worked_seconds("kiril"))) in seite)
+ok("ohne Benutzerfilter erscheinen alle Benutzer",
+   all(("<b>%s</b>" % u) in c2.get("/admin").get_data(as_text=True)
+       for u in ("kiril", "chef")))
+
+# --- Doppelter Beginn darf keine Zeit verschlucken ------------------------
+def _sek(folge):
+    """Rechnet eine Aktionsfolge (Stunde, Aktion) in Sekunden um."""
+    import json as _json
+    pfad = os.path.join(tmp, "probe.jsonl")
+    alt_file, alt_dir = A.DATA_FILE, A.DATA_DIR
+    A.DATA_FILE, A.DATA_DIR = pfad, tmp
+    open(pfad, "w").close()
+    for stunde, aktion in folge:
+        A.append_entry({"id": "p%d" % stunde, "user": "probe", "action": aktion,
+                        "ts": "2026-07-01T%02d:00:00+00:00" % stunde})
+    wert = A.worked_seconds("probe", "2026-07-01", "2026-07-01")
+    A.DATA_FILE, A.DATA_DIR = alt_file, alt_dir
+    return wert
+
+ok("normale Folge EIN->AUS ergibt 8h", _sek([(6, "EIN"), (14, "AUS")]) == 8 * 3600)
+ok("mit Pause werden Pausen abgezogen",
+   _sek([(6, "EIN"), (10, "PAUSE"), (11, "ZURUECK"), (14, "AUS")]) == 7 * 3600)
+ok("doppeltes EIN verschluckt die Zeit nicht",
+   _sek([(6, "EIN"), (14, "EIN"), (15, "AUS")]) == 9 * 3600)
+ok("Beginn ohne Ende zaehlt bis jetzt weiter",
+   _sek([(6, "EIN")]) > 0)
 
 print("\n%d Fehler" % len(fails))
 sys.exit(1 if fails else 0)

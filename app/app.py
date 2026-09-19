@@ -13,6 +13,7 @@ import secrets
 import time
 import uuid
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from functools import wraps
 
 from flask import (Flask, abort, redirect, render_template_string, request,
@@ -20,6 +21,9 @@ from flask import (Flask, abort, redirect, render_template_string, request,
 
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
 DATA_FILE = os.path.join(DATA_DIR, "times.jsonl")
+
+# Gespeichert wird immer UTC; angezeigt und eingegeben wird Ortszeit.
+TZ = ZoneInfo(os.environ.get("ZE_TZ", "Europe/Zurich"))
 
 ACTIONS = ("EIN", "PAUSE", "ZURUECK", "AUS")
 # Zustandsautomat: welcher Status erlaubt welche Aktion, und wohin fuehrt sie.
@@ -198,7 +202,7 @@ def apply_filters(entries, f):
     needle = (f.get("q") or "").lower()
     out = []
     for e in entries:
-        day = (e.get("ts") or "")[:10]
+        day = local_day(e.get("ts") or "")
         if von and day < von:
             continue
         if bis and day > bis:
@@ -217,13 +221,41 @@ def known_users(entries):
     return sorted(set(USERS) | {e.get("user") for e in entries if e.get("user")})
 
 
-def parse_form_ts(raw):
-    """datetime-local liefert 'YYYY-MM-DDTHH:MM'. Gibt None bei Unsinn."""
+def to_local(iso):
+    return datetime.fromisoformat(iso).astimezone(TZ)
+
+
+def fmt_local(iso):
+    """Anzeigeformat in Ortszeit, z.B. '19.09.2026 17:04'."""
     try:
-        return datetime.fromisoformat((raw or "").strip()).replace(
-            tzinfo=timezone.utc).isoformat()
+        return to_local(iso).strftime("%d.%m.%Y %H:%M")
+    except (ValueError, TypeError):
+        return "?"
+
+
+def input_local(iso):
+    """Wert fuer ein datetime-local-Feld, in Ortszeit."""
+    try:
+        return to_local(iso).strftime("%Y-%m-%dT%H:%M")
+    except (ValueError, TypeError):
+        return ""
+
+
+def local_day(iso):
+    """Kalendertag in Ortszeit - massgeblich fuer Filter und Tagessumme."""
+    try:
+        return to_local(iso).date().isoformat()
+    except (ValueError, TypeError):
+        return ""
+
+
+def parse_form_ts(raw):
+    """datetime-local liefert Ortszeit 'YYYY-MM-DDTHH:MM' -> UTC. None bei Unsinn."""
+    try:
+        naiv = datetime.fromisoformat((raw or "").strip())
     except ValueError:
         return None
+    return naiv.replace(tzinfo=TZ).astimezone(timezone.utc).isoformat()
 
 
 def current_status(user):
@@ -240,27 +272,42 @@ def current_status(user):
     return "AUS"
 
 
-def worked_seconds_today(user):
-    """Summiert EIN/ZURUECK -> PAUSE/AUS Intervalle des laufenden Tages."""
-    today = datetime.now(timezone.utc).date()
-    entries = list(reversed(read_entries(user)))  # chronologisch
+def worked_seconds(user, von=None, bis=None):
+    """Summiert EIN/ZURUECK -> PAUSE/AUS Intervalle, optional auf einen
+    Zeitraum begrenzt. Tage zaehlen nach Ortszeit."""
     total, start = 0.0, None
-    for rec in entries:
+    for rec in reversed(read_entries(user)):  # chronologisch
         try:
             ts = datetime.fromisoformat(rec["ts"])
         except (KeyError, ValueError):
             continue
-        if ts.date() != today:
+        tag = local_day(rec["ts"])
+        if (von and tag < von) or (bis and tag > bis):
             continue
         action = rec.get("action")
         if action in ("EIN", "ZURUECK"):
+            # Zweimal Beginn ohne Ende dazwischen kann durch einen Nachtrag
+            # oder eine Korrektur entstehen. Das offene Intervall wird hier
+            # geschlossen, statt den Startzeitpunkt zu ueberschreiben - sonst
+            # verschwindet die Zeit dazwischen stillschweigend.
+            if start is not None:
+                total += max(0.0, (ts - start).total_seconds())
             start = ts
         elif action in ("PAUSE", "AUS") and start is not None:
-            total += (ts - start).total_seconds()
+            total += max(0.0, (ts - start).total_seconds())
             start = None
-    if start is not None:
+    if start is not None:  # laeuft gerade noch
         total += (datetime.now(timezone.utc) - start).total_seconds()
     return int(total)
+
+
+def worked_seconds_today(user):
+    heute = datetime.now(TZ).date().isoformat()
+    return worked_seconds(user, von=heute, bis=heute)
+
+
+def hhmm(seconds):
+    return "%dh %02dmin" % (seconds // 3600, seconds % 3600 // 60)
 
 
 # --------------------------------------------------------------------------
@@ -294,6 +341,19 @@ def login_required(fn):
             return redirect(url_for("login"))
         return fn(*a, **kw)
     return wrapper
+
+
+app.jinja_env.filters["lokal"] = fmt_local
+app.jinja_env.filters["lokalinput"] = input_local
+
+
+@app.errorhandler(404)
+@app.errorhandler(405)
+def kein_weg_hierhin(err):
+    """Ein GET auf eine reine POST-Route (z.B. nach Zurueck oder Neuladen im
+    Browser) endete bisher in einer nackten Fehlerseite ohne Rueckweg."""
+    ziel = url_for("index") if session.get("user") else url_for("login")
+    return render_template_string(FEHLER_HTML, ziel=ziel, code=err.code), err.code
 
 
 @app.after_request
@@ -375,7 +435,7 @@ def index():
         allowed=TRANSITIONS[status],
         labels=LABELS,
         entries=read_entries(user, limit=15),
-        today=f"{secs // 3600}h {secs % 3600 // 60}min",
+        today=hhmm(secs),
         csrf=csrf_token(),
     )
 
@@ -422,10 +482,17 @@ def admin():
     f = current_filters(request.args)
     alle = read_entries()
     treffer = apply_filters(alle, f)
+
+    # Erfasste Zeit je Benutzer im gewaehlten Zeitraum. Die Aktion wird dabei
+    # bewusst ignoriert: fuer ein Intervall braucht es Anfang UND Ende.
+    betroffen = [f["user"]] if f.get("user") else known_users(alle)
+    summen = [(u, hhmm(worked_seconds(u, f.get("von"), f.get("bis"))))
+              for u in betroffen]
+
     return render_template_string(
         ADMIN_HTML, entries=treffer[:200], gesamt=len(alle), treffer=len(treffer),
         f=f, users=known_users(alle), actions=ACTIONS, user=session["user"],
-        csrf=csrf_token())
+        csrf=csrf_token(), summen=summen)
 
 
 @app.get("/admin/nachtragen")
@@ -433,7 +500,7 @@ def admin():
 @admin_required
 def new_form():
     f = current_filters(request.args)
-    vorgabe = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M")
+    vorgabe = datetime.now(TZ).strftime("%Y-%m-%dT%H:%M")
     return render_template_string(
         NEW_HTML, users=known_users(read_entries()), actions=ACTIONS,
         csrf=csrf_token(), f=f, error=None,
@@ -572,6 +639,16 @@ select{font:inherit;padding:.5rem;border-radius:.4rem;border:1px solid #9ca3af;w
 .count{font-size:.85rem;color:#6b7280;margin:.4rem 0}
 """
 
+FEHLER_HTML = """<!doctype html><html lang=de><meta charset=utf-8>
+<title>Seite nicht verfuegbar</title><style>""" + CSS + """</style>
+<h1>Hier geht es nicht weiter</h1>
+<div class=card>
+  <p>Diese Adresse laesst sich nicht direkt aufrufen (Fehler {{ code }}).
+  Das passiert zum Beispiel, wenn im Browser nach dem Stempeln auf Zurueck
+  oder Neu laden geklickt wird.</p>
+  <p><a href="{{ ziel }}"><button type=button>Zurueck zur Zeiterfassung</button></a></p>
+</div></html>"""
+
 LOGIN_HTML = """<!doctype html><html lang=de><meta charset=utf-8>
 <title>Zeiterfassung - Login</title><style>""" + CSS + """</style>
 <h1>Zeiterfassung</h1><p class=muted>Bitte anmelden</p>
@@ -607,9 +684,9 @@ INDEX_HTML = """<!doctype html><html lang=de><meta charset=utf-8>
 <div class=card>
   <h2 style="font-size:1rem">Letzte Stempelungen</h2>
   {% if entries %}
-  <table><tr><th>Zeit (UTC)</th><th>Aktion</th><th>Notiz</th></tr>
+  <table><tr><th>Zeit</th><th>Aktion</th><th>Notiz</th></tr>
   {% for e in entries %}
-    <tr><td>{{ e.ts[:19].replace('T',' ') }}</td><td>{{ e.action }}</td><td>{{ e.note }}</td></tr>
+    <tr><td>{{ e.ts | lokal }}</td><td>{{ e.action }}</td><td>{{ e.note }}</td></tr>
   {% endfor %}</table>
   {% else %}<p class=muted>Noch keine Eintraege.</p>{% endif %}
 </div>
@@ -646,6 +723,9 @@ werden protokolliert, nicht ueberschrieben.</p>
   </form>
   <p class=count>{{ treffer }} von {{ gesamt }} Eintraegen
     {%- if treffer > 200 %} (die ersten 200 werden angezeigt){% endif %}</p>
+  <p class=count>Erfasste Zeit im Zeitraum:
+    {% for name, dauer in summen %}<b>{{ name }}</b> {{ dauer }}{% if not loop.last %} &middot; {% endif %}{% endfor %}
+  </p>
 </div>
 
 <p><a href="{{ url_for('new_form', **f) }}"><button type=button>Eintrag nachtragen</button></a></p>
@@ -653,13 +733,13 @@ werden protokolliert, nicht ueberschrieben.</p>
 <div class=card>
 {% if entries %}
 <table>
-  <tr><th>Zeit (UTC)</th><th>Benutzer</th><th>Aktion</th><th>Notiz</th><th></th></tr>
+  <tr><th>Zeit</th><th>Benutzer</th><th>Aktion</th><th>Notiz</th><th></th></tr>
 {% for e in entries %}
   <tr>
-    <td>{{ e.ts[:19].replace('T',' ') }}
+    <td>{{ e.ts | lokal }}
       {% if e.created_by %}<span class=tag>nachgetragen von {{ e.created_by }}</span>{% endif %}
       {% if e.edited_by %}<span class=tag>korrigiert von {{ e.edited_by }}
-        am {{ e.edited_at[:16].replace('T',' ') }}</span>{% endif %}</td>
+        am {{ e.edited_at | lokal }}</span>{% endif %}</td>
     <td>{{ e.user }}</td><td>{{ e.action }}</td><td>{{ e.note }}</td>
     <td><div class=row>
       <a href="{{ url_for('edit_form', entry_id=e.id, **f) }}"><button class="ghost small"
@@ -697,7 +777,7 @@ NEW_HTML = """<!doctype html><html lang=de><meta charset=utf-8>
       <option value="{{ a }}" {% if vals.action == a %}selected{% endif %}>{{ a }}</option>
       {% endfor %}
     </select></label></p>
-  <p><label>Zeitpunkt (UTC)<br>
+  <p><label>Zeitpunkt<br>
     <input type="datetime-local" name=ts value="{{ vals.ts }}"></label></p>
   <p><label>Notiz<br>
     <input name=note maxlength=200 value="{{ vals.note }}"></label></p>
@@ -723,8 +803,8 @@ EDIT_HTML = """<!doctype html><html lang=de><meta charset=utf-8>
       <option value="{{ a }}" {% if a == e.action %}selected{% endif %}>{{ a }}</option>
       {% endfor %}
     </select></label></p>
-  <p><label>Zeitpunkt (UTC)<br>
-    <input type="datetime-local" name=ts value="{{ e.ts[:16] }}"></label></p>
+  <p><label>Zeitpunkt<br>
+    <input type="datetime-local" name=ts value="{{ e.ts | lokalinput }}"></label></p>
   <p><label>Notiz<br>
     <input name=note maxlength=200 value="{{ e.note }}"></label></p>
   <div class=row>
