@@ -1,0 +1,18 @@
+# Prod ist nicht direkt exponiert: nur Ingress-Controller darf den Pod ansprechen.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: zeiterfassung-allow-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: zeiterfassung
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080

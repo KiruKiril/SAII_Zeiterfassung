@@ -1,0 +1,21 @@
+# Prod zieht das Image aus der Registry und laesst es nie lokal ueberschreiben.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zeiterfassung
+spec:
+  template:
+    spec:
+      containers:
+        - name: zeiterfassung
+          imagePullPolicy: Always
+          env:
+            - name: ZE_ENV
+              value: prod
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi

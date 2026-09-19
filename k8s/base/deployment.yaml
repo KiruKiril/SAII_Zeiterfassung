@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zeiterfassung
+  labels:
+    app: zeiterfassung
+spec:
+  replicas: 1
+  # Recreate statt RollingUpdate: der PVC ist ReadWriteOnce, zwei Pod-Generationen
+  # koennten ihn nicht gleichzeitig mounten und der Rollout wuerde haengen.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: zeiterfassung
+  template:
+    metadata:
+      labels:
+        app: zeiterfassung
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: zeiterfassung
+          image: zeiterfassung:1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: DATA_DIR
+              value: /data
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: zeiterfassung-secret
+                  key: SECRET_KEY
+            - name: ZE_USERS
+              valueFrom:
+                secretKeyRef:
+                  name: zeiterfassung-secret
+                  key: ZE_USERS
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          # Startup: gibt dem Prozess Zeit, ohne die Liveness-Probe scharf zu stellen.
+          startupProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 2
+            failureThreshold: 15
+          # Liveness: nur "Prozess reagiert" - kein I/O, sonst killt ein volles
+          # Volume den Pod in einer Schleife statt ihn nur aus dem Service zu nehmen.
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          # Readiness: prueft echten Schreibzugriff auf /data.
+          readinessProbe:
+            httpGet: { path: /ready, port: http }
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 2
+          volumeMounts:
+            - name: daten
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: daten
+          persistentVolumeClaim:
+            claimName: zeiterfassung-data
+        # Root-Dateisystem ist read-only; gunicorn braucht trotzdem /tmp.
+        - name: tmp
+          emptyDir: {}

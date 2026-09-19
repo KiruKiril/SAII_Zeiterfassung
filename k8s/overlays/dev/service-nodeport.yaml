@@ -1,0 +1,12 @@
+# Dev wird lokal im Browser getestet -> NodePort statt ClusterIP.
+apiVersion: v1
+kind: Service
+metadata:
+  name: zeiterfassung
+spec:
+  type: NodePort
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      nodePort: 30080

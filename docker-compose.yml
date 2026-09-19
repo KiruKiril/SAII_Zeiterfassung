@@ -1,0 +1,28 @@
+# Schnellstart fuer die Bewertung:  docker compose up --build
+# Danach: http://localhost:8080
+services:
+  zeiterfassung:
+    build: ./app
+    image: zeiterfassung:1.0
+    ports:
+      - "8080:8080"
+    environment:
+      # Demo-Werte, bewusst nur fuer die Bewertung.
+      # Produktiv kommen beide aus einem Kubernetes-Secret -> k8s/make-secret.sh
+      SECRET_KEY: "demo-nur-fuer-bewertung-nicht-produktiv"
+      # Passwoerter stehen auch hier NICHT im Klartext, sondern als PBKDF2-Hash.
+      # Zugangsdaten fuer die Demo siehe README.md
+      ZE_USERS: "kiril:pbkdf2_sha256$$240000$$6972eb95f70c71e555ff7e69c8df63ec$$ed7c370fc5821c676025266383f469b41fd219db5ef2a420b46cbf7eee69727f:admin,anna:pbkdf2_sha256$$240000$$d5f3ed6aa37c7ad2556fa133e395189b$$e77297a28daab101f2efff5d04de3afa563c0f91d3efc62aa658ae3641c33539:user"
+    volumes:
+      # Benannter Volume = Persistenz-Nachweis auch ohne Kubernetes
+      - zeiterfassung-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  zeiterfassung-data:
