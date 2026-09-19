@@ -62,7 +62,7 @@ minikube image load zeiterfassung:1.0
 ./k8s/make-secret.sh ze-dev "kiril:geheim123:admin" "anna:anna123:user"
 kubectl apply -k k8s/overlays/dev
 kubectl -n ze-dev rollout status deploy/zeiterfassung
-kubectl -n ze-dev port-forward svc/zeiterfassung 8080:80
+./port-forward.sh start
 ```
 
 ### Persistenz im Cluster prüfen

@@ -1,13 +1,13 @@
 # Drehbuch Video (max. 2.5 Minuten)
 
 > Die Kubernetes-Demo laeuft bereits. Falls der Port-Forward abgebrochen ist:
-> `kubectl -n ze-dev port-forward svc/zeiterfassung 8080:80`
+> `./port-forward.sh start` (startet sich bei Abbruch selbst neu)
 > Alternativ ohne Kubernetes: `docker compose up -d` (dann entfallen die kubectl-Teile).
 
 Vorbereitung – in einem Terminal laufen lassen:
 
 ```bash
-kubectl -n ze-dev port-forward svc/zeiterfassung 8080:80
+./port-forward.sh start
 ```
 
 ---

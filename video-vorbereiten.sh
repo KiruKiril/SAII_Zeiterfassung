@@ -10,17 +10,11 @@ echo "2/4  Alte Demo-Daten entfernen"
 kubectl -n $NS exec deploy/zeiterfassung -- sh -c 'rm -f /data/times.jsonl' 2>/dev/null \
   && echo "  Datenstand geleert" || echo "  konnte Daten nicht leeren"
 
-echo "3/4  Port-Forward auf 8080"
-if curl -sf -o /dev/null http://localhost:8080/login 2>/dev/null; then
-  echo "  laeuft bereits"
-else
-  lsof -ti:8080 2>/dev/null | xargs -r kill 2>/dev/null; sleep 2
-  nohup kubectl -n $NS port-forward --address 127.0.0.1 svc/zeiterfassung 8080:80 \
-    > /tmp/ze-portforward.log 2>&1 &
-  sleep 5
-  curl -sf -o /dev/null http://localhost:8080/login && echo "  gestartet" || {
-    echo "  fehlgeschlagen, siehe /tmp/ze-portforward.log"; exit 1; }
-fi
+echo "3/4  Port-Forward-Wache starten"
+# Nicht direkt kubectl port-forward: das bricht bei Pod-Wechsel und Leerlauf ab.
+# Die Wache startet den Tunnel automatisch neu.
+"$(dirname "$0")/port-forward.sh" start | sed 's/^/  /' || {
+  echo "  fehlgeschlagen, siehe /tmp/ze-portforward.log"; exit 1; }
 
 echo "4/4  Healthchecks"
 printf '  /health  '; curl -s http://localhost:8080/health; echo
@@ -34,4 +28,8 @@ Bereit. http://localhost:8080
 
 Vor der Aufnahme: Mitteilungen stummschalten (Kontrollzentrum > Fokus > Nicht stoeren)
 und andere Fenster schliessen.
+
+Falls die Seite waehrend der Aufnahme doch einmal haengt: kurz warten und neu
+laden - die Wache stellt den Tunnel innerhalb weniger Sekunden wieder her.
+Zustand pruefen mit ./port-forward.sh status
 HINT
