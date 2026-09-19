@@ -35,9 +35,14 @@ ist also wirklich vergeben."
 
 ---
 
-**1:10–1:30 — Rollen (RBAC)**
+**1:10–1:40 — Rollen (RBAC) und Korrigieren**
 
 „Alle Mitarbeitenden ansehen" öffnen → Admin sieht alle Benutzer.
+Bei einem Eintrag auf **Bearbeiten**, Notiz oder Zeit ändern, speichern.
+In der Liste steht danach „korrigiert von kiril am …".
+
+Sagen: „Die Korrektur überschreibt nichts – sie wird als eigener Datensatz
+angehängt. Wer wann was geändert hat, bleibt im Log nachvollziehbar."
 Kurz erwähnen: als `anna` (Rolle user) gibt es diesen Link nicht, und der
 direkte Aufruf von `/admin` gibt 403.
 

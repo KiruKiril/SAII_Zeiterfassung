@@ -11,6 +11,7 @@ import os
 import re
 import secrets
 import time
+import uuid
 from datetime import datetime, timezone
 from functools import wraps
 
@@ -103,7 +104,8 @@ def append_entry(entry):
             fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
 
 
-def read_entries(user=None, limit=None):
+def read_raw():
+    """Alle Zeilen des Logs in Schreibreihenfolge - inklusive Korrekturen."""
     if not os.path.exists(DATA_FILE):
         return []
     out = []
@@ -113,13 +115,61 @@ def read_entries(user=None, limit=None):
             if not line:
                 continue
             try:
-                rec = json.loads(line)
+                out.append(json.loads(line))
             except json.JSONDecodeError:
                 continue  # beschaedigte Zeile ueberspringen, nie crashen
-            if user is None or rec.get("user") == user:
-                out.append(rec)
-    out.reverse()
+    return out
+
+
+def _legacy_id(rec):
+    """Eintraege aus der Zeit vor den IDs bekommen eine stabile Ersatz-ID."""
+    return "L" + hashlib.sha256(
+        f"{rec.get('ts')}|{rec.get('user')}".encode()).hexdigest()[:11]
+
+
+def effective_entries():
+    """Das Log ist append-only: Korrekturen ueberschreiben nichts, sondern
+    werden beim Lesen auf den Originaleintrag angewendet. So bleibt
+    nachvollziehbar, wer wann was geaendert hat."""
+    base, order = {}, []
+    for rec in read_raw():
+        kind = rec.get("type", "stamp")
+        if kind == "stamp":
+            rid = rec.get("id") or _legacy_id(rec)
+            base[rid] = dict(rec, id=rid)
+            order.append(rid)
+        elif kind in ("correction", "delete"):
+            target = base.get(rec.get("target"))
+            if target is None:
+                continue
+            if kind == "delete":
+                target["deleted"] = True
+            else:
+                for field in ("action", "note", "ts"):
+                    if field in rec:
+                        target[field] = rec[field]
+            target["edited_by"] = rec.get("by")
+            target["edited_at"] = rec.get("at")
+    live = [base[i] for i in order if not base[i].get("deleted")]
+    live.sort(key=lambda r: r.get("ts", ""), reverse=True)
+    return live
+
+
+def read_entries(user=None, limit=None):
+    out = [r for r in effective_entries() if user is None or r.get("user") == user]
     return out[:limit] if limit else out
+
+
+def find_entry(entry_id):
+    for rec in effective_entries():
+        if rec["id"] == entry_id:
+            return rec
+    return None
+
+
+def clean_note(raw):
+    note = (raw or "").strip()[:NOTE_MAX]
+    return "".join(ch for ch in note if ch.isprintable())
 
 
 def current_status(user):
@@ -252,8 +302,7 @@ def login():
 @app.post("/logout")
 @login_required
 def logout():
-    if not hmac.compare_digest(request.form.get("csrf", ""), session.get("csrf", "")):
-        abort(403)
+    check_csrf()
     session.clear()
     return redirect(url_for("login"))
 
@@ -280,8 +329,7 @@ def index():
 @app.post("/stempeln")
 @login_required
 def stempeln():
-    if not hmac.compare_digest(request.form.get("csrf", ""), session.get("csrf", "")):
-        abort(403)
+    check_csrf()
     user = session["user"]
     action = (request.form.get("action") or "").upper()
     if action not in ACTIONS:
@@ -289,24 +337,100 @@ def stempeln():
     status = current_status(user)
     if action not in TRANSITIONS[status]:
         abort(409)  # z.B. zweimal EIN hintereinander
-    note = (request.form.get("note") or "").strip()[:NOTE_MAX]
-    note = "".join(ch for ch in note if ch.isprintable())
     append_entry({
+        "id": uuid.uuid4().hex[:12],
         "ts": datetime.now(timezone.utc).isoformat(),
         "user": user,
         "action": action,
-        "note": note,
+        "note": clean_note(request.form.get("note")),
     })
     return redirect(url_for("index"))
 
 
+def admin_required(fn):
+    @wraps(fn)
+    def wrapper(*a, **kw):
+        if session.get("role") != "admin":
+            abort(403)  # RBAC: nur Rolle admin sieht und aendert fremde Daten
+        return fn(*a, **kw)
+    return wrapper
+
+
+def check_csrf():
+    if not hmac.compare_digest(request.form.get("csrf", ""), session.get("csrf", "")):
+        abort(403)
+
+
 @app.get("/admin")
 @login_required
+@admin_required
 def admin():
-    if session.get("role") != "admin":
-        abort(403)  # RBAC: nur Rolle admin sieht fremde Daten
     return render_template_string(
-        ADMIN_HTML, entries=read_entries(limit=100), user=session["user"])
+        ADMIN_HTML, entries=read_entries(limit=100), user=session["user"],
+        csrf=csrf_token())
+
+
+@app.get("/admin/bearbeiten/<entry_id>")
+@login_required
+@admin_required
+def edit_form(entry_id):
+    entry = find_entry(entry_id)
+    if entry is None:
+        abort(404)
+    return render_template_string(
+        EDIT_HTML, e=entry, actions=ACTIONS, csrf=csrf_token(), error=None)
+
+
+@app.post("/admin/bearbeiten/<entry_id>")
+@login_required
+@admin_required
+def edit_apply(entry_id):
+    check_csrf()
+    entry = find_entry(entry_id)
+    if entry is None:
+        abort(404)
+
+    action = (request.form.get("action") or "").upper()
+    if action not in ACTIONS:
+        abort(400)
+
+    # Zeitstempel kommt als "YYYY-MM-DDTHH:MM" aus dem datetime-local-Feld.
+    raw_ts = (request.form.get("ts") or "").strip()
+    try:
+        ts = datetime.fromisoformat(raw_ts).replace(tzinfo=timezone.utc).isoformat()
+    except ValueError:
+        return render_template_string(
+            EDIT_HTML, e=entry, actions=ACTIONS, csrf=csrf_token(),
+            error="Ungueltiges Datum. Erwartet wird Datum und Uhrzeit."), 400
+
+    # Append-only: die Korrektur wird angehaengt, der Originaleintrag bleibt stehen.
+    append_entry({
+        "type": "correction",
+        "target": entry_id,
+        "action": action,
+        "note": clean_note(request.form.get("note")),
+        "ts": ts,
+        "by": session["user"],
+        "at": datetime.now(timezone.utc).isoformat(),
+    })
+    return redirect(url_for("admin"))
+
+
+@app.post("/admin/loeschen/<entry_id>")
+@login_required
+@admin_required
+def delete_entry(entry_id):
+    check_csrf()
+    if find_entry(entry_id) is None:
+        abort(404)
+    # Auch das Loeschen ist ein Anhang, kein Entfernen aus der Datei.
+    append_entry({
+        "type": "delete",
+        "target": entry_id,
+        "by": session["user"],
+        "at": datetime.now(timezone.utc).isoformat(),
+    })
+    return redirect(url_for("admin"))
 
 
 # --------------------------------------------------------------------------
@@ -329,6 +453,10 @@ table{width:100%;border-collapse:collapse;font-size:.9rem}
 td,th{text-align:left;padding:.35rem .5rem;border-bottom:1px solid #e5e7eb}
 .err{color:#b91c1c}
 .row{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}
+button.small{padding:.25rem .6rem;font-size:.8rem}
+button.danger{border-color:#b91c1c;background:#b91c1c}
+.tag{font-size:.72rem;color:#6b7280;display:block}
+select{font:inherit;padding:.5rem;border-radius:.4rem;border:1px solid #9ca3af;width:100%}
 """
 
 LOGIN_HTML = """<!doctype html><html lang=de><meta charset=utf-8>
@@ -377,12 +505,57 @@ INDEX_HTML = """<!doctype html><html lang=de><meta charset=utf-8>
 
 ADMIN_HTML = """<!doctype html><html lang=de><meta charset=utf-8>
 <title>Zeiterfassung - Admin</title><style>""" + CSS + """</style>
-<h1>Alle Stempelungen</h1><p class=muted>Angemeldet als {{ user }} (admin)</p>
-<div class=card><table><tr><th>Zeit (UTC)</th><th>Benutzer</th><th>Aktion</th><th>Notiz</th></tr>
+<h1>Alle Stempelungen</h1>
+<p class=muted>Angemeldet als {{ user }} (admin) &middot; Korrekturen werden protokolliert,
+nicht ueberschrieben.</p>
+<div class=card>
+{% if entries %}
+<table>
+  <tr><th>Zeit (UTC)</th><th>Benutzer</th><th>Aktion</th><th>Notiz</th><th></th></tr>
 {% for e in entries %}
-  <tr><td>{{ e.ts[:19].replace('T',' ') }}</td><td>{{ e.user }}</td><td>{{ e.action }}</td><td>{{ e.note }}</td></tr>
-{% endfor %}</table></div>
+  <tr>
+    <td>{{ e.ts[:19].replace('T',' ') }}
+      {% if e.edited_by %}<span class=tag>korrigiert von {{ e.edited_by }}
+        am {{ e.edited_at[:16].replace('T',' ') }}</span>{% endif %}</td>
+    <td>{{ e.user }}</td><td>{{ e.action }}</td><td>{{ e.note }}</td>
+    <td><div class=row>
+      <a href="{{ url_for('edit_form', entry_id=e.id) }}"><button class="ghost small"
+         type=button>Bearbeiten</button></a>
+      <form method=post action="{{ url_for('delete_entry', entry_id=e.id) }}"
+            onsubmit="return confirm('Diesen Eintrag wirklich entfernen?')">
+        <input type=hidden name=csrf value="{{ csrf }}">
+        <button class="danger small" type=submit>Loeschen</button></form>
+    </div></td>
+  </tr>
+{% endfor %}</table>
+{% else %}<p class=muted>Noch keine Eintraege.</p>{% endif %}
+</div>
 <p><a href="{{ url_for('index') }}">Zurueck</a></p></html>"""
+
+EDIT_HTML = """<!doctype html><html lang=de><meta charset=utf-8>
+<title>Eintrag bearbeiten</title><style>""" + CSS + """</style>
+<h1>Eintrag bearbeiten</h1>
+<p class=muted>Benutzer {{ e.user }} &middot; ID {{ e.id }}</p>
+{% if error %}<p class=err>{{ error }}</p>{% endif %}
+<form method=post class=card>
+  <input type=hidden name=csrf value="{{ csrf }}">
+  <p><label>Aktion<br>
+    <select name=action>
+      {% for a in actions %}
+      <option value="{{ a }}" {% if a == e.action %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select></label></p>
+  <p><label>Zeitpunkt (UTC)<br>
+    <input type="datetime-local" name=ts value="{{ e.ts[:16] }}"></label></p>
+  <p><label>Notiz<br>
+    <input name=note maxlength=200 value="{{ e.note }}"></label></p>
+  <div class=row>
+    <button type=submit>Korrektur speichern</button>
+    <a href="{{ url_for('admin') }}"><button class=ghost type=button>Abbrechen</button></a>
+  </div>
+</form>
+<p class=muted>Die Aenderung wird als Korrektur angehaengt. Der urspruengliche
+Eintrag bleibt im Protokoll erhalten.</p></html>"""
 
 
 if __name__ == "__main__":

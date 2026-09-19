@@ -69,5 +69,56 @@ ok("/ready -> 503 wenn Datenpfad kaputt", c.get("/ready").status_code == 503)
 A.DATA_DIR = tmp
 ok("/health bleibt 200 (Liveness unabhaengig)", c.get("/health").status_code == 200)
 
+
+# --- Admin darf bearbeiten (append-only Korrekturen) ----------------------
+adm = c2.get("/admin").get_data(as_text=True)
+import re as _re
+eid = _re.search(r'/admin/bearbeiten/([a-zA-Z0-9]+)', adm).group(1)
+tok2 = _re.search(r'name=csrf value="([^"]+)"', adm).group(1)
+
+ok("admin sieht Bearbeiten-Link", "Bearbeiten" in adm)
+ok("user kommt nicht ans Formular",
+   c.get("/admin/bearbeiten/" + eid).status_code == 403)
+ok("admin oeffnet Formular", c2.get("/admin/bearbeiten/" + eid).status_code == 200)
+ok("unbekannte ID -> 404", c2.get("/admin/bearbeiten/gibtsnicht").status_code == 404)
+
+raw_before = len(A.read_raw())
+r = c2.post("/admin/bearbeiten/" + eid,
+            data={"action": "AUS", "ts": "2026-09-19T08:30", "note": "korrigiert", "csrf": tok2})
+ok("Korrektur akzeptiert", r.status_code == 302)
+ok("Log ist gewachsen, nichts ueberschrieben", len(A.read_raw()) == raw_before + 1)
+ok("Originalzeile noch im Log",
+   any(x.get("id") == eid and x.get("type", "stamp") == "stamp" for x in A.read_raw()))
+
+upd = A.find_entry(eid)
+ok("Aktion korrigiert", upd["action"] == "AUS")
+ok("Notiz korrigiert", upd["note"] == "korrigiert")
+ok("Zeit korrigiert", upd["ts"].startswith("2026-09-19T08:30"))
+ok("Korrektur ist zugeordnet", upd["edited_by"] == "chef")
+
+ok("Korrektur ohne CSRF -> 403",
+   c2.post("/admin/bearbeiten/" + eid, data={"action": "EIN", "ts": "2026-09-19T08:30"}).status_code == 403)
+ok("ungueltige Aktion -> 400",
+   c2.post("/admin/bearbeiten/" + eid,
+           data={"action": "XX", "ts": "2026-09-19T08:30", "csrf": tok2}).status_code == 400)
+ok("ungueltiges Datum -> 400",
+   c2.post("/admin/bearbeiten/" + eid,
+           data={"action": "EIN", "ts": "kein-datum", "csrf": tok2}).status_code == 400)
+ok("user darf nicht korrigieren",
+   c.post("/admin/bearbeiten/" + eid,
+          data={"action": "EIN", "ts": "2026-09-19T08:30", "csrf": token}).status_code == 403)
+
+# --- Loeschen ist ebenfalls append-only -----------------------------------
+before_del = len(A.read_entries())
+ok("Loeschen ohne CSRF -> 403",
+   c2.post("/admin/loeschen/" + eid).status_code == 403)
+ok("user darf nicht loeschen",
+   c.post("/admin/loeschen/" + eid, data={"csrf": token}).status_code == 403)
+ok("admin loescht", c2.post("/admin/loeschen/" + eid, data={"csrf": tok2}).status_code == 302)
+ok("Eintrag aus der Ansicht verschwunden", A.find_entry(eid) is None)
+ok("Sichtbare Eintraege um 1 weniger", len(A.read_entries()) == before_del - 1)
+ok("Datei enthaelt den Eintrag weiterhin",
+   any(x.get("id") == eid for x in A.read_raw()))
+
 print("\n%d Fehler" % len(fails))
 sys.exit(1 if fails else 0)

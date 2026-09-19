@@ -17,7 +17,7 @@ Arbeitszeiten auch dann behält, wenn Kubernetes den Pod ersetzt.
 | Stempeln | `EIN → PAUSE → ZURÜCK → AUS` als Zustandsautomat im Server erzwungen |
 | Notiz | Freitext pro Stempelung (z.B. „Support KYZ Kunde Meyer"), max. 200 Zeichen |
 | Übersicht | Aktueller Status, heute erfasste Zeit, letzte 15 Stempelungen |
-| Benutzer | Login mit Rollen `user` / `admin`; Admin sieht alle Mitarbeitenden (`/admin`) |
+| Benutzer | Login mit Rollen `user` / `admin`; Admin sieht alle Mitarbeitenden und kann Einträge korrigieren |
 | Persistenz | Append-only JSONL unter `/data/times.jsonl` auf einem PVC |
 | Health | Getrennte Endpunkte `/health` (Liveness) und `/ready` (Readiness) |
 | Umgebungen | Kustomize `base` + Overlays `dev` und `prod` |
@@ -74,7 +74,7 @@ Jede Anforderung mit Umsetzung und Nachweis.
 | Kein Timing-Leak | Vergleich über `hmac.compare_digest` |
 | Keine Benutzer-Enumeration | Login-Fehler immer identisch („Login fehlgeschlagen.") |
 | Brute-Force-Bremse | Max. 5 Fehlversuche pro IP und Minute, danach HTTP 429 |
-| RBAC | Rolle `admin` erforderlich für `/admin`; `user` sieht ausschliesslich eigene Einträge |
+| RBAC | Rolle `admin` erforderlich für `/admin` sowie für Korrigieren und Entfernen von Einträgen; `user` sieht ausschliesslich eigene Einträge und kann nichts fremdes ändern |
 | Session-Schutz | Cookie `HttpOnly`, `SameSite=Strict`, in Prod zusätzlich `Secure`; `SECRET_KEY` aus Secret |
 
 ### 2.3 Eingaben und Ausgaben
@@ -104,6 +104,14 @@ Schreibvorgänge sind append-only und laufen über `flock` (exklusiv) plus
 hinterlassen, und parallele gunicorn-Worker überschreiben sich nicht.
 Defekte Zeilen werden beim Lesen übersprungen statt die App zum Absturz
 zu bringen – eine kaputte Zeile darf nicht die ganze Zeiterfassung blockieren.
+
+Auch Korrekturen durch den Admin überschreiben nichts. Eine Änderung wird als
+eigener Datensatz (`type: correction`) angehängt und erst beim Lesen auf den
+Originaleintrag angewendet; ein Entfernen ist ein `type: delete`-Datensatz.
+Damit bleibt jede Arbeitszeit-Änderung nachvollziehbar – wer sie wann gemacht
+hat, steht im Log und wird in der Admin-Ansicht angezeigt. Das ist bei
+Arbeitszeiten kein Detail, sondern die Voraussetzung dafür, dass die Erfassung
+überhaupt belastbar ist.
 
 ---
 
@@ -143,12 +151,13 @@ warten, den der alte noch hält, und der Rollout bliebe hängen.
 
 ## 4. Nachweis
 
-**Automatisierte Tests** – `python3 app/test_app.py`, 26 Tests, 0 Fehler:
+**Automatisierte Tests** – `python3 app/test_app.py`, 47 Tests, 0 Fehler:
 Health/Ready, Login inkl. Fehlversuch, CSRF-Ablehnung, alle vier Übergänge,
 unerlaubter Doppelübergang (409), unbekannte Aktion (400), JSONL-Persistenz,
 XSS-Escaping, Längenbegrenzung, RBAC (user → 403, admin → 200),
 Sicherheitsheader, `/ready` → 503 bei kaputtem Datenpfad bei gleichzeitig
-weiterhin gesundem `/health`.
+weiterhin gesundem `/health`, Admin-Korrekturen inklusive Nachweis, dass das
+Log wächst statt überschrieben zu werden.
 
 **Persistenz-Nachweis** – Container mit Volume gestartet, drei Stempelungen
 erzeugt, Container mit `docker rm -f` vollständig zerstört, neuer Container auf

@@ -20,7 +20,7 @@ Dann **http://localhost:8080** im Browser öffnen.
 
 | Benutzer | Passwort | Rolle |
 |---|---|---|
-| `kiril` | `geheim123` | admin (sieht alle Mitarbeitenden) |
+| `kiril` | `geheim123` | admin (sieht alle Mitarbeitenden, kann Eintraege korrigieren) |
 | `anna` | `anna123` | user (sieht nur eigene Einträge) |
 
 Beenden mit `docker compose down`. Die Daten bleiben im benannten Volume;
@@ -92,11 +92,19 @@ python3 -m venv .venv && .venv/bin/pip install -r app/requirements.txt
 .venv/bin/python app/test_app.py
 ```
 
-26 Tests: Health/Ready, Login inkl. Fehlversuch, CSRF-Ablehnung, alle vier
+47 Tests: Health/Ready, Login inkl. Fehlversuch, CSRF-Ablehnung, alle vier
 Zustandsübergänge, unerlaubter Doppelübergang (409), unbekannte Aktion (400),
 JSONL-Persistenz, XSS-Escaping, Längenbegrenzung, RBAC (user → 403,
 admin → 200), Sicherheitsheader, `/ready` → 503 bei kaputtem Datenpfad bei
-gleichzeitig gesundem `/health`.
+gleichzeitig gesundem `/health`, Admin-Korrekturen und -Loeschungen.
+
+## Korrigieren als Admin
+
+Als `kiril` unter „Alle Mitarbeitenden ansehen" hat jeder Eintrag
+**Bearbeiten** und **Loeschen**. Beides ueberschreibt nichts: die Aenderung
+wird als Korrektur-Datensatz angehaengt und erst beim Lesen angewendet. In der
+Admin-Liste steht danach, wer wann korrigiert hat. Das Log bleibt damit
+vollstaendig und die Arbeitszeit-Aenderung nachvollziehbar.
 
 ---
 
