@@ -91,6 +91,8 @@ Jede Anforderung mit Umsetzung und Nachweis.
 | Filterwerte geprüft | Nur bekannte Filterfelder werden gelesen, Datum gegen `YYYY-MM-DD` und Aktion gegen die Whitelist validiert – ungültige Werte werden verworfen, nicht weitergereicht |
 | Keine offene Weiterleitung | Nach dem Speichern wird das Ziel aus geprüften Einzelwerten neu gebaut, nie aus einer mitgegebenen URL |
 | Sicherheitsheader | `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, CSP `default-src 'self'` |
+| Kein JavaScript nötig | Die Oberfläche kommt ohne Skripte aus; die CSP bleibt streng, statt für eine Rückfrage `'unsafe-inline'` zu erlauben |
+| Kein Zwischenspeichern | `Cache-Control: no-store` – nach dem Abmelden bleibt keine Seite mit Daten im Browser-Verlauf |
 
 ### 2.4 Secrets und Netzwerk
 
@@ -158,7 +160,7 @@ warten, den der alte noch hält, und der Rollout bliebe hängen.
 
 ## 4. Nachweis
 
-**Automatisierte Tests** – `python3 app/test_app.py`, 95 Tests, 0 Fehler:
+**Automatisierte Tests** – `python3 app/test_app.py`, 128 Tests, 0 Fehler:
 Health/Ready, Login inkl. Fehlversuch, CSRF-Ablehnung, alle vier Übergänge,
 unerlaubter Doppelübergang (409), unbekannte Aktion (400), JSONL-Persistenz,
 XSS-Escaping, Längenbegrenzung, RBAC (user → 403, admin → 200),
@@ -167,7 +169,8 @@ weiterhin gesundem `/health`, Admin-Korrekturen inklusive Nachweis, dass das
 Log wächst statt überschrieben zu werden, Nachträge inklusive Kennzeichnung,
 sowie alle Filter einzeln und kombiniert.
 
-Zwei Fehler wurden dabei durch Tests aufgedeckt und behoben. Erstens führte ein
+Mehrere Fehler wurden durch Tests und einen Durchlauf im echten Browser
+aufgedeckt und behoben. Erstens führte ein
 `GET` auf eine reine `POST`-Route – etwa nach *Zurück* oder *Neu laden* im
 Browser – zu einer nackten `405`-Seite ohne Rückweg; jetzt erscheint eine
 Seite mit Link zurück. Zweitens verschluckte die Tagessumme Zeit, wenn zweimal
@@ -175,6 +178,18 @@ Seite mit Link zurück. Zweitens verschluckte die Tagessumme Zeit, wenn zweimal
 überschrieben statt das offene Intervall zu schliessen. Genau das kann durch
 einen Nachtrag entstehen, und die korrigierte Zeit erschien dann nicht in
 „heute erfasst".
+
+Drittens stand in der Admin-Liste eine Schaltfläche innerhalb eines Links
+(`<a><button></a>`) – ungültiges HTML, das Safari beim Aufbau des DOM umbaut,
+sodass „Löschen" als `GET` statt als `POST` hinausging und wirkungslos blieb.
+Viertens war die Rückfrage vor dem Löschen als `onsubmit`-Attribut umgesetzt
+und wurde von der eigenen Content-Security-Policy blockiert; sie erschien nie.
+Beides ist ersetzt: Links sind echte Links, und die Rückfrage ist eine eigene
+Seite ohne JavaScript. Fünftens wurden Seiten zwischengespeichert, sodass der
+Zurück-Knopf einen veralteten Stand mit falschen Schaltflächen zeigte – ein
+Klick darauf endete in einer nackten Fehlerseite. Seiten werden jetzt mit
+`Cache-Control: no-store` ausgeliefert, und alle Fehlerfälle (400, 403, 404,
+405, 409) erklären den Grund und bieten einen Rückweg an.
 
 **Persistenz-Nachweis** – Container mit Volume gestartet, drei Stempelungen
 erzeugt, Container mit `docker rm -f` vollständig zerstört, neuer Container auf

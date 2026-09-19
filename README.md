@@ -92,7 +92,7 @@ python3 -m venv .venv && .venv/bin/pip install -r app/requirements.txt
 .venv/bin/python app/test_app.py
 ```
 
-95 Tests: Health/Ready, Login inkl. Fehlversuch, CSRF-Ablehnung, alle vier
+128 Tests: Health/Ready, Login inkl. Fehlversuch, CSRF-Ablehnung, alle vier
 Zustandsübergänge, unerlaubter Doppelübergang (409), unbekannte Aktion (400),
 JSONL-Persistenz, XSS-Escaping, Längenbegrenzung, RBAC (user → 403,
 admin → 200), Sicherheitsheader, `/ready` → 503 bei kaputtem Datenpfad bei
@@ -129,6 +129,19 @@ Selbsterfassung verwechselt werden.
 
 Getrennt, damit ein volles oder falsch berechtigtes Volume den Pod nicht in
 einen CrashLoopBackOff schickt, sondern nur aus dem Service nimmt.
+
+---
+
+## Bedienung: was passiert bei Fehlbedienung
+
+Keine nackten Fehlerseiten. Wer nach dem Stempeln im Browser auf *Zurück* oder
+*Neu laden* klickt, bekommt eine erklärende Seite mit Rückweg statt eines
+`405`. Seiten werden mit `no-store` ausgeliefert, damit der Zurück-Knopf nie
+einen veralteten Stand mit falschen Schaltflächen zeigt. Ist der Status
+inzwischen ein anderer, erklärt eine `409`-Seite den Grund.
+
+Löschen fragt auf einer eigenen Seite nach – ohne JavaScript, damit es auch
+unter der strengen Content-Security-Policy funktioniert.
 
 ---
 

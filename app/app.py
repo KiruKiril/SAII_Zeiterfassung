@@ -16,8 +16,8 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from functools import wraps
 
-from flask import (Flask, abort, redirect, render_template_string, request,
-                   session, url_for)
+from flask import (Flask, Response, abort, redirect, render_template_string,
+                   request, session, url_for)
 
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
 DATA_FILE = os.path.join(DATA_DIR, "times.jsonl")
@@ -347,17 +347,48 @@ app.jinja_env.filters["lokal"] = fmt_local
 app.jinja_env.filters["lokalinput"] = input_local
 
 
+FEHLERTEXTE = {
+    400: ("Eingabe unvollstaendig",
+          "Ein Feld war leer oder hatte ein Format, das nicht gelesen werden "
+          "konnte. Bitte noch einmal ausfuellen."),
+    403: ("Seite war nicht mehr aktuell",
+          "Das kann zwei Gruende haben: die Seite lag zu lange offen und ihr "
+          "Sicherheitsmerkmal ist abgelaufen, oder die Aktion ist deiner Rolle "
+          "nicht erlaubt. Lade die Seite neu und versuche es noch einmal."),
+    404: ("Seite nicht gefunden",
+          "Diese Adresse gibt es nicht. Moeglicherweise wurde der Eintrag "
+          "inzwischen entfernt."),
+    405: ("Adresse nicht direkt aufrufbar",
+          "Diese Adresse beantwortet nur abgeschickte Formulare. Das passiert "
+          "zum Beispiel, wenn im Browser nach dem Stempeln auf Zurueck oder "
+          "Neu laden geklickt wird."),
+    409: ("Status hat sich geaendert",
+          "Die Seite zeigte noch den alten Stand. Zwischen Einstempeln, Pause "
+          "und Ausstempeln ist nur die jeweils passende Aktion moeglich. Lade "
+          "die Seite neu, dann stimmen die Schaltflaechen wieder."),
+}
+
+
+@app.errorhandler(400)
+@app.errorhandler(403)
 @app.errorhandler(404)
 @app.errorhandler(405)
-def kein_weg_hierhin(err):
-    """Ein GET auf eine reine POST-Route (z.B. nach Zurueck oder Neuladen im
-    Browser) endete bisher in einer nackten Fehlerseite ohne Rueckweg."""
-    ziel = url_for("index") if session.get("user") else url_for("login")
-    return render_template_string(FEHLER_HTML, ziel=ziel, code=err.code), err.code
+@app.errorhandler(409)
+def freundlicher_fehler(err):
+    """Nie eine nackte Fehlerseite: immer erklaeren und einen Rueckweg zeigen."""
+    titel, text = FEHLERTEXTE.get(
+        err.code, ("Etwas ist schiefgelaufen", "Bitte versuche es noch einmal."))
+    ziel = url_for("index") if session.get("user") in USERS else url_for("login")
+    return render_template_string(
+        FEHLER_HTML, titel=titel, text=text, ziel=ziel, code=err.code), err.code
 
 
 @app.after_request
 def security_headers(resp):
+    # Ohne no-store zeigt der Zurueck-Knopf eine alte Seite mit falschen
+    # Schaltflaechen - ein Klick darauf endete dann in einem 409.
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
     resp.headers["X-Content-Type-Options"] = "nosniff"
     resp.headers["X-Frame-Options"] = "DENY"
     resp.headers["Referrer-Policy"] = "no-referrer"
@@ -368,6 +399,22 @@ def security_headers(resp):
 # --------------------------------------------------------------------------
 # Health / Readiness - getrennte Semantik fuer Kubernetes.
 # --------------------------------------------------------------------------
+# Jeder Browser fragt /favicon.ico an; ohne Antwort steht das Log voller 404er.
+FAVICON = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
+    b'<circle cx="16" cy="16" r="14" fill="#2563eb"/>'
+    b'<path d="M16 8.5V16l5 3" stroke="#fff" stroke-width="2.6" fill="none"'
+    b' stroke-linecap="round" stroke-linejoin="round"/></svg>'
+)
+
+
+@app.get("/favicon.ico")
+def favicon():
+    resp = Response(FAVICON, mimetype="image/svg+xml")
+    resp.headers["Cache-Control"] = "public, max-age=86400"
+    return resp
+
+
 @app.get("/health")
 def health():
     """Liveness: Prozess reagiert. Kein I/O, damit ein volles PVC keinen Restart ausloest."""
@@ -592,6 +639,19 @@ def edit_apply(entry_id):
     return redirect(url_for("admin", **f))
 
 
+@app.get("/admin/loeschen/<entry_id>")
+@login_required
+@admin_required
+def delete_form(entry_id):
+    """Rueckfrage als eigene Seite. Ein onsubmit="confirm(...)" waere durch
+    die Content-Security-Policy blockiert worden und hat nie ausgeloest."""
+    entry = find_entry(entry_id)
+    if entry is None:
+        abort(404)
+    return render_template_string(
+        DELETE_HTML, e=entry, csrf=csrf_token(), f=current_filters(request.args))
+
+
 @app.post("/admin/loeschen/<entry_id>")
 @login_required
 @admin_required
@@ -620,17 +680,18 @@ h1{font-size:1.4rem;margin-bottom:.2rem}
 .muted{color:#6b7280;font-size:.9rem}
 .card{border:1px solid #d1d5db;border-radius:.6rem;padding:1rem;margin:1rem 0}
 .status{font-size:1.1rem;font-weight:600}
-button{font:inherit;padding:.55rem 1.1rem;border-radius:.4rem;border:1px solid #2563eb;
-background:#2563eb;color:#fff;cursor:pointer}
-button.ghost{background:transparent;color:#2563eb}
+button,.btn{font:inherit;padding:.55rem 1.1rem;border-radius:.4rem;
+border:1px solid #2563eb;background:#2563eb;color:#fff;cursor:pointer;
+display:inline-block;text-decoration:none;line-height:1.2;text-align:center}
+button.ghost,.btn.ghost{background:transparent;color:#2563eb}
 input{font:inherit;padding:.5rem;border-radius:.4rem;border:1px solid #9ca3af;width:100%;
 box-sizing:border-box}
 table{width:100%;border-collapse:collapse;font-size:.9rem}
 td,th{text-align:left;padding:.35rem .5rem;border-bottom:1px solid #e5e7eb}
 .err{color:#b91c1c}
 .row{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}
-button.small{padding:.25rem .6rem;font-size:.8rem}
-button.danger{border-color:#b91c1c;background:#b91c1c}
+button.small,.btn.small{padding:.25rem .6rem;font-size:.8rem}
+button.danger,.btn.danger{border-color:#b91c1c;background:#b91c1c;color:#fff}
 .tag{font-size:.72rem;color:#6b7280;display:block}
 select{font:inherit;padding:.5rem;border-radius:.4rem;border:1px solid #9ca3af;width:100%}
 .filter{display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:.6rem;align-items:end}
@@ -640,16 +701,17 @@ select{font:inherit;padding:.5rem;border-radius:.4rem;border:1px solid #9ca3af;w
 """
 
 FEHLER_HTML = """<!doctype html><html lang=de><meta charset=utf-8>
-<title>Seite nicht verfuegbar</title><style>""" + CSS + """</style>
-<h1>Hier geht es nicht weiter</h1>
+<link rel=icon href=/favicon.ico>
+<title>{{ titel }}</title><style>""" + CSS + """</style>
+<h1>{{ titel }}</h1>
 <div class=card>
-  <p>Diese Adresse laesst sich nicht direkt aufrufen (Fehler {{ code }}).
-  Das passiert zum Beispiel, wenn im Browser nach dem Stempeln auf Zurueck
-  oder Neu laden geklickt wird.</p>
-  <p><a href="{{ ziel }}"><button type=button>Zurueck zur Zeiterfassung</button></a></p>
+  <p>{{ text }}</p>
+  <p class=muted>Fehler {{ code }}</p>
+  <p><a class=btn href="{{ ziel }}">Zurueck zur Zeiterfassung</a></p>
 </div></html>"""
 
 LOGIN_HTML = """<!doctype html><html lang=de><meta charset=utf-8>
+<link rel=icon href=/favicon.ico>
 <title>Zeiterfassung - Login</title><style>""" + CSS + """</style>
 <h1>Zeiterfassung</h1><p class=muted>Bitte anmelden</p>
 {% if error %}<p class=err>{{ error }}</p>{% endif %}
@@ -660,6 +722,7 @@ LOGIN_HTML = """<!doctype html><html lang=de><meta charset=utf-8>
 </form></html>"""
 
 INDEX_HTML = """<!doctype html><html lang=de><meta charset=utf-8>
+<link rel=icon href=/favicon.ico>
 <title>Zeiterfassung</title><style>""" + CSS + """</style>
 <div class=row style="justify-content:space-between">
   <div><h1>Zeiterfassung</h1>
@@ -694,6 +757,7 @@ INDEX_HTML = """<!doctype html><html lang=de><meta charset=utf-8>
 </html>"""
 
 ADMIN_HTML = """<!doctype html><html lang=de><meta charset=utf-8>
+<link rel=icon href=/favicon.ico>
 <title>Zeiterfassung - Admin</title><style>""" + CSS + """</style>
 <h1>Alle Stempelungen</h1>
 <p class=muted>Angemeldet als {{ user }} (admin) &middot; Korrekturen und Nachtraege
@@ -718,7 +782,7 @@ werden protokolliert, nicht ueberschrieben.</p>
     <div><label>Notiz enthaelt<input name=q value="{{ f.q or '' }}" maxlength=64></label></div>
     <div class=row>
       <button type=submit>Filtern</button>
-      <a href="{{ url_for('admin') }}"><button class=ghost type=button>Zuruecksetzen</button></a>
+      <a class="btn ghost" href="{{ url_for('admin') }}">Zuruecksetzen</a>
     </div>
   </form>
   <p class=count>{{ treffer }} von {{ gesamt }} Eintraegen
@@ -728,7 +792,7 @@ werden protokolliert, nicht ueberschrieben.</p>
   </p>
 </div>
 
-<p><a href="{{ url_for('new_form', **f) }}"><button type=button>Eintrag nachtragen</button></a></p>
+<p><a class=btn href="{{ url_for('new_form', **f) }}">Eintrag nachtragen</a></p>
 
 <div class=card>
 {% if entries %}
@@ -742,13 +806,8 @@ werden protokolliert, nicht ueberschrieben.</p>
         am {{ e.edited_at | lokal }}</span>{% endif %}</td>
     <td>{{ e.user }}</td><td>{{ e.action }}</td><td>{{ e.note }}</td>
     <td><div class=row>
-      <a href="{{ url_for('edit_form', entry_id=e.id, **f) }}"><button class="ghost small"
-         type=button>Bearbeiten</button></a>
-      <form method=post action="{{ url_for('delete_entry', entry_id=e.id) }}"
-            onsubmit="return confirm('Diesen Eintrag wirklich entfernen?')">
-        <input type=hidden name=csrf value="{{ csrf }}">
-        {% for k, v in f.items() %}<input type=hidden name="{{ k }}" value="{{ v }}">{% endfor %}
-        <button class="danger small" type=submit>Loeschen</button></form>
+      <a class="btn ghost small" href="{{ url_for('edit_form', entry_id=e.id, **f) }}">Bearbeiten</a>
+      <a class="btn danger small" href="{{ url_for('delete_form', entry_id=e.id, **f) }}">Loeschen</a>
     </div></td>
   </tr>
 {% endfor %}</table>
@@ -757,6 +816,7 @@ werden protokolliert, nicht ueberschrieben.</p>
 <p><a href="{{ url_for('index') }}">Zurueck</a></p></html>"""
 
 NEW_HTML = """<!doctype html><html lang=de><meta charset=utf-8>
+<link rel=icon href=/favicon.ico>
 <title>Eintrag nachtragen</title><style>""" + CSS + """</style>
 <h1>Eintrag nachtragen</h1>
 <p class=muted>Fuer versehentlich geloeschte oder vergessene Stempelungen.</p>
@@ -783,13 +843,37 @@ NEW_HTML = """<!doctype html><html lang=de><meta charset=utf-8>
     <input name=note maxlength=200 value="{{ vals.note }}"></label></p>
   <div class=row>
     <button type=submit>Eintrag anlegen</button>
-    <a href="{{ url_for('admin', **f) }}"><button class=ghost type=button>Abbrechen</button></a>
+    <a class="btn ghost" href="{{ url_for('admin', **f) }}">Abbrechen</a>
   </div>
 </form>
 <p class=muted>Der Eintrag wird als Nachtrag gekennzeichnet; in der Liste steht,
 wer ihn angelegt hat.</p></html>"""
 
+DELETE_HTML = """<!doctype html><html lang=de><meta charset=utf-8>
+<link rel=icon href=/favicon.ico>
+<title>Eintrag entfernen</title><style>""" + CSS + """</style>
+<h1>Eintrag wirklich entfernen?</h1>
+<div class=card>
+  <table>
+    <tr><th>Zeit</th><td>{{ e.ts | lokal }}</td></tr>
+    <tr><th>Benutzer</th><td>{{ e.user }}</td></tr>
+    <tr><th>Aktion</th><td>{{ e.action }}</td></tr>
+    <tr><th>Notiz</th><td>{{ e.note }}</td></tr>
+  </table>
+  <form method=post action="{{ url_for('delete_entry', entry_id=e.id) }}">
+    <input type=hidden name=csrf value="{{ csrf }}">
+    {% for k, v in f.items() %}<input type=hidden name="{{ k }}" value="{{ v }}">{% endfor %}
+    <div class=row style="margin-top:1rem">
+      <button class=danger type=submit>Ja, entfernen</button>
+      <a class="btn ghost" href="{{ url_for('admin', **f) }}">Abbrechen</a>
+    </div>
+  </form>
+</div>
+<p class=muted>Der Eintrag verschwindet aus der Liste, bleibt aber im Protokoll
+erhalten. Er laesst sich mit „Eintrag nachtragen" wiederherstellen.</p></html>"""
+
 EDIT_HTML = """<!doctype html><html lang=de><meta charset=utf-8>
+<link rel=icon href=/favicon.ico>
 <title>Eintrag bearbeiten</title><style>""" + CSS + """</style>
 <h1>Eintrag bearbeiten</h1>
 <p class=muted>Benutzer {{ e.user }} &middot; ID {{ e.id }}</p>
@@ -809,7 +893,7 @@ EDIT_HTML = """<!doctype html><html lang=de><meta charset=utf-8>
     <input name=note maxlength=200 value="{{ e.note }}"></label></p>
   <div class=row>
     <button type=submit>Korrektur speichern</button>
-    <a href="{{ url_for('admin', **f) }}"><button class=ghost type=button>Abbrechen</button></a>
+    <a class="btn ghost" href="{{ url_for('admin', **f) }}">Abbrechen</a>
   </div>
 </form>
 <p class=muted>Die Aenderung wird als Korrektur angehaengt. Der urspruengliche

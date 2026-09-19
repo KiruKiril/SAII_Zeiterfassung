@@ -74,7 +74,7 @@ ok("/health bleibt 200 (Liveness unabhaengig)", c.get("/health").status_code == 
 adm = c2.get("/admin").get_data(as_text=True)
 import re as _re
 eid = _re.search(r'/admin/bearbeiten/([a-zA-Z0-9]+)', adm).group(1)
-tok2 = _re.search(r'name=csrf value="([^"]+)"', adm).group(1)
+tok2 = _re.search(r'name=csrf value="([^"]+)"', c2.get("/").get_data(as_text=True)).group(1)
 
 ok("admin sieht Bearbeiten-Link", "Bearbeiten" in adm)
 ok("user kommt nicht ans Formular",
@@ -123,7 +123,7 @@ ok("Datei enthaelt den Eintrag weiterhin",
 
 # --- Admin kann Eintraege nachtragen --------------------------------------
 adm2 = c2.get("/admin").get_data(as_text=True)
-tok3 = _re.search(r'name=csrf value="([^"]+)"', adm2).group(1)
+tok3 = _re.search(r'name=csrf value="([^"]+)"', c2.get("/").get_data(as_text=True)).group(1)
 
 ok("Nachtragen-Button vorhanden", "Eintrag nachtragen" in adm2)
 ok("user kommt nicht ans Nachtragen", c.get("/admin/nachtragen").status_code == 403)
@@ -223,7 +223,7 @@ vorher = A.worked_seconds_today("kiril")
 
 neu = [e for e in A.read_entries("kiril") if e["action"] == "EIN"][0]
 adm3 = c2.get("/admin").get_data(as_text=True)
-tok5 = _re.search(r'name=csrf value="([^"]+)"', adm3).group(1)
+tok5 = _re.search(r'name=csrf value="([^"]+)"', c2.get("/").get_data(as_text=True)).group(1)
 c2.post("/admin/bearbeiten/" + neu["id"],
         data={"action": "EIN", "ts": heute + "T06:00", "note": "", "csrf": tok5})
 nachher = A.worked_seconds_today("kiril")
@@ -262,6 +262,103 @@ ok("doppeltes EIN verschluckt die Zeit nicht",
    _sek([(6, "EIN"), (14, "EIN"), (15, "AUS")]) == 9 * 3600)
 ok("Beginn ohne Ende zaehlt bis jetzt weiter",
    _sek([(6, "EIN")]) > 0)
+
+
+# =========================================================================
+#  Szenarien aus dem echten Gebrauch
+# =========================================================================
+print("\n--- Szenarien ---")
+
+def frisch(name, passwort):
+    cl = A.app.test_client()
+    cl.post("/login", data={"user": name, "password": passwort})
+    return cl
+
+def tok_von(cl, pfad="/"):
+    m = _re.search(r'name=csrf value="([^"]+)"', cl.get(pfad).get_data(as_text=True))
+    assert m, "kein CSRF-Token auf " + pfad
+    return m.group(1)
+
+def angemeldet(cl):
+    """Wurde man rausgeworfen? Dann leitet / auf den Login um."""
+    return cl.get("/").status_code == 200
+
+# --- Voller Arbeitstag ohne Rauswurf --------------------------------------
+u = frisch("kiril", "geheim123")
+t = tok_von(u)
+u.post("/stempeln", data={"action": "AUS", "csrf": t})     # sauberer Start
+abfolge = [("EIN", "start"), ("PAUSE", "mittag"), ("ZURUECK", ""), ("AUS", "feierabend")]
+raus = []
+for aktion, notiz in abfolge:
+    r = u.post("/stempeln", data={"action": aktion, "note": notiz, "csrf": t})
+    if r.status_code != 302 or not angemeldet(u):
+        raus.append(aktion)
+ok("ganzer Tag EIN-PAUSE-ZURUECK-AUS ohne Rauswurf", raus == [])
+ok("nach Feierabend weiterhin angemeldet", angemeldet(u))
+ok("Status nach Feierabend ist ausgestempelt",
+   "ausgestempelt" in u.get("/").get_data(as_text=True))
+
+# --- Veraltete Seite: zweimal Feierabend ----------------------------------
+r = u.post("/stempeln", data={"action": "AUS", "csrf": t})
+ok("zweites Ausstempeln gibt 409", r.status_code == 409)
+ok("409 erklaert den Grund statt nackter Fehlerseite",
+   "Status hat sich geaendert" in r.get_data(as_text=True))
+ok("409 bietet einen Rueckweg", "Zurueck zur Zeiterfassung" in r.get_data(as_text=True))
+ok("nach dem 409 immer noch angemeldet", angemeldet(u))
+
+# --- Zurueck-Knopf im Browser ---------------------------------------------
+r = u.get("/stempeln")
+ok("GET /stempeln erklaert den Fall", "Adresse nicht direkt aufrufbar" in r.get_data(as_text=True))
+ok("nach GET /stempeln immer noch angemeldet", angemeldet(u))
+
+# --- Keine veralteten Seiten aus dem Browser-Zwischenspeicher -------------
+for pfad in ("/", "/admin", "/login"):
+    cl = u if pfad != "/login" else A.app.test_client()
+    ok("%s wird nicht zwischengespeichert" % pfad,
+       "no-store" in cl.get(pfad).headers.get("Cache-Control", ""))
+
+# --- Loeschen mit Rueckfrage ----------------------------------------------
+adm = frisch("chef", "adminpw")
+eintrag = A.read_entries()[0]
+vorher = len(A.read_entries())
+
+r = adm.get("/admin/loeschen/" + eintrag["id"])
+ok("Loeschen zeigt eine Rueckfrage statt 405", r.status_code == 200)
+ok("Rueckfrage nennt den Eintrag", eintrag["action"] in r.get_data(as_text=True))
+ok("Rueckfrage aendert noch nichts", len(A.read_entries()) == vorher)
+
+tok_del = _re.search(r'name=csrf value="([^"]+)"', r.get_data(as_text=True)).group(1)
+r = adm.post("/admin/loeschen/" + eintrag["id"], data={"csrf": tok_del})
+ok("Bestaetigung entfernt den Eintrag", r.status_code == 302)
+ok("Eintrag ist aus der Liste weg", len(A.read_entries()) == vorher - 1)
+ok("nach dem Loeschen immer noch angemeldet", angemeldet(adm))
+
+ok("user kommt nicht an die Rueckfrage",
+   u.get("/admin/loeschen/" + A.read_entries()[0]["id"]).status_code == 403)
+ok("403 erklaert den Grund",
+   "nicht mehr aktuell" in u.get("/admin/loeschen/" + A.read_entries()[0]["id"]).get_data(as_text=True))
+
+# --- Gueltiges HTML: keine Schaltflaeche in einem Link --------------------
+import re as _re2
+adm2 = frisch("chef", "adminpw")
+eid = A.read_entries()[0]["id"]
+seiten = {
+    "/": u.get("/").get_data(as_text=True),
+    "/admin": adm2.get("/admin").get_data(as_text=True),
+    "/admin/nachtragen": adm2.get("/admin/nachtragen").get_data(as_text=True),
+    "/admin/bearbeiten": adm2.get("/admin/bearbeiten/" + eid).get_data(as_text=True),
+    "/admin/loeschen": adm2.get("/admin/loeschen/" + eid).get_data(as_text=True),
+    "/login": A.app.test_client().get("/login").get_data(as_text=True),
+}
+for pfad, html in seiten.items():
+    ok("%s: kein <button> in einem <a>" % pfad,
+       not _re2.search(r"<a[^>]*>\s*<button", html))
+    ok("%s: keine Inline-Skripte (CSP)" % pfad,
+       not _re2.search(r"\son(click|submit|change|load)\s*=", html))
+
+r = A.app.test_client().get("/favicon.ico")
+ok("Favicon wird ausgeliefert (keine 404 im Log)",
+   r.status_code == 200 and r.mimetype == "image/svg+xml")
 
 print("\n%d Fehler" % len(fails))
 sys.exit(1 if fails else 0)
