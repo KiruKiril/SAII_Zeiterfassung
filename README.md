@@ -49,6 +49,7 @@ Die Stempelungen sind nach dem Neustart noch da.
 | `k8s/overlays/prod/` | 3 Replicas, ClusterIP, Registry-Image, NetworkPolicy, Namespace `ze-prod` |
 | `k8s/make-secret.sh` | Erzeugt das Secret im Cluster – es liegt bewusst nicht im Repo |
 | `docs/Video_Drehbuch.md` | Ablauf des Demo-Videos |
+| `docs/Netzwerkplan.svg` | Netzwerkplan: VM, Minikube, Namespaces, Speicher |
 | `docker-compose.yml` | Schnellstart ohne Kubernetes |
 
 ---

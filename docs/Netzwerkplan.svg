@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 880" width="1000" height="880" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="pfeil" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
+      <polygon points="0 0, 9 3.5, 0 7" fill="#334155"/>
+    </marker>
+    <marker id="pfeilGrau" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
+      <polygon points="0 0, 9 3.5, 0 7" fill="#94a3b8"/>
+    </marker>
+  </defs>
+
+  <rect width="1000" height="880" fill="#ffffff"/>
+
+  <text x="40" y="40" font-size="21" font-weight="bold" fill="#0f172a">Netzwerkplan Zeiterfassung</text>
+  <text x="40" y="62" font-size="12.5" fill="#64748b">Kiril Rothacher · SAII Tag 4/5 · Ubuntu-VM mit Minikube</text>
+
+  <!-- Arbeitsplatz -->
+  <rect x="40" y="95" width="300" height="86" rx="8" fill="#f1f5f9" stroke="#475569" stroke-width="1.5"/>
+  <text x="58" y="120" font-size="14" font-weight="bold" fill="#0f172a">Arbeitsplatz</text>
+  <text x="58" y="141" font-size="12" fill="#334155">Browser (Safari / Chrome)</text>
+  <text x="58" y="159" font-size="11.5" fill="#64748b">Netz 192.168.110.0/24</text>
+  <text x="58" y="174" font-size="11.5" fill="#64748b">kubectl / docker CLI</text>
+
+  <!-- Registry -->
+  <rect x="660" y="95" width="300" height="86" rx="8" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5 3"/>
+  <text x="678" y="120" font-size="14" font-weight="bold" fill="#0f172a">Container-Registry</text>
+  <text x="678" y="141" font-size="12" fill="#334155">registry.hfi.local</text>
+  <text x="678" y="159" font-size="11.5" fill="#64748b">liefert das Prod-Image</text>
+  <text x="678" y="174" font-size="11.5" fill="#64748b">nur von Prod genutzt</text>
+
+  <!-- Ubuntu-VM -->
+  <rect x="40" y="235" width="920" height="605" rx="10" fill="#ffffff" stroke="#1e3a8a" stroke-width="2"/>
+  <rect x="40" y="235" width="920" height="34" rx="10" fill="#1e3a8a"/>
+  <rect x="40" y="258" width="920" height="11" fill="#1e3a8a"/>
+  <text x="58" y="258" font-size="13.5" font-weight="bold" fill="#ffffff">Ubuntu-VM — 192.168.110.60 · Docker Engine</text>
+
+  <!-- Minikube -->
+  <rect x="72" y="296" width="856" height="516" rx="9" fill="#f8fafc" stroke="#2563eb" stroke-width="1.8"/>
+  <text x="90" y="320" font-size="13" font-weight="bold" fill="#1e40af">minikube · Single-Node-Cluster (Docker-Treiber) · Node 192.168.49.2</text>
+
+  <!-- ze-dev -->
+  <rect x="98" y="340" width="398" height="330" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
+  <text x="114" y="363" font-size="12.5" font-weight="bold" fill="#15803d">Namespace ze-dev</text>
+  <text x="114" y="380" font-size="11" fill="#64748b">kubectl apply -k k8s/overlays/dev</text>
+
+  <rect x="118" y="394" width="358" height="56" rx="6" fill="#f0fdf4" stroke="#16a34a"/>
+  <text x="132" y="414" font-size="12" font-weight="bold" fill="#14532d">Service zeiterfassung</text>
+  <text x="132" y="432" font-size="11.5" fill="#334155">NodePort 30080 → targetPort 8080</text>
+  <text x="132" y="446" font-size="10.5" fill="#64748b">Selector app=zeiterfassung</text>
+
+  <line x1="297" y1="450" x2="297" y2="482" stroke="#334155" stroke-width="1.6" marker-end="url(#pfeil)"/>
+
+  <rect x="118" y="486" width="358" height="88" rx="6" fill="#eff6ff" stroke="#2563eb"/>
+  <text x="132" y="506" font-size="12" font-weight="bold" fill="#1e3a8a">Pod · 1 Replica</text>
+  <text x="132" y="524" font-size="11.5" fill="#334155">gunicorn + Flask, Port 8080</text>
+  <text x="132" y="540" font-size="11" fill="#64748b">UID 10001 · read-only rootfs</text>
+  <text x="132" y="555" font-size="11" fill="#64748b">Probes: /health · /ready</text>
+  <text x="132" y="568" font-size="10.5" fill="#64748b">Env aus Secret zeiterfassung-secret</text>
+
+  <line x1="297" y1="574" x2="297" y2="604" stroke="#334155" stroke-width="1.6" marker-end="url(#pfeil)"/>
+  <text x="305" y="594" font-size="10.5" fill="#64748b">volumeMount /data</text>
+
+  <rect x="118" y="608" width="358" height="46" rx="6" fill="#fefce8" stroke="#ca8a04"/>
+  <text x="132" y="627" font-size="11.5" font-weight="bold" fill="#713f12">PVC zeiterfassung-data</text>
+  <text x="132" y="644" font-size="11" fill="#334155">ReadWriteOnce · 1 Gi · /data/times.jsonl</text>
+
+  <!-- ze-prod -->
+  <rect x="520" y="340" width="382" height="330" rx="8" fill="#ffffff" stroke="#9333ea" stroke-width="1.6"/>
+  <text x="536" y="363" font-size="12.5" font-weight="bold" fill="#7e22ce">Namespace ze-prod</text>
+  <text x="536" y="380" font-size="11" fill="#64748b">kubectl apply -k k8s/overlays/prod</text>
+
+  <rect x="540" y="394" width="342" height="56" rx="6" fill="#faf5ff" stroke="#9333ea"/>
+  <text x="554" y="414" font-size="12" font-weight="bold" fill="#581c87">Service zeiterfassung</text>
+  <text x="554" y="432" font-size="11.5" fill="#334155">ClusterIP :80 → 8080</text>
+  <text x="554" y="446" font-size="10.5" fill="#64748b">nicht nach aussen exponiert</text>
+
+  <line x1="711" y1="450" x2="711" y2="482" stroke="#334155" stroke-width="1.6" marker-end="url(#pfeil)"/>
+
+  <rect x="540" y="486" width="342" height="88" rx="6" fill="#eff6ff" stroke="#2563eb"/>
+  <text x="554" y="506" font-size="12" font-weight="bold" fill="#1e3a8a">Pods · 3 Replicas</text>
+  <text x="554" y="524" font-size="11.5" fill="#334155">Image aus der Registry</text>
+  <text x="554" y="540" font-size="11" fill="#64748b">imagePullPolicy: Always</text>
+  <text x="554" y="555" font-size="11" fill="#64748b">NetworkPolicy: nur Ingress-NS</text>
+  <text x="554" y="568" font-size="10.5" fill="#64748b">darf Port 8080 erreichen</text>
+
+  <line x1="711" y1="574" x2="711" y2="604" stroke="#334155" stroke-width="1.6" marker-end="url(#pfeil)"/>
+
+  <rect x="540" y="608" width="342" height="46" rx="6" fill="#fefce8" stroke="#ca8a04"/>
+  <text x="554" y="627" font-size="11.5" font-weight="bold" fill="#713f12">PVC zeiterfassung-data</text>
+  <text x="554" y="644" font-size="11" fill="#334155">ReadWriteOnce · 1 Gi</text>
+
+  <!-- PV auf dem Host -->
+  <rect x="98" y="692" width="804" height="52" rx="7" fill="#f1f5f9" stroke="#475569" stroke-width="1.4"/>
+  <text x="116" y="713" font-size="12" font-weight="bold" fill="#0f172a">PersistentVolume · Speicherort auf dem Minikube-Node</text>
+  <text x="116" y="732" font-size="11.5" fill="#334155">StorageClass standard · bleibt bestehen, wenn Kubernetes den Pod ersetzt</text>
+  <line x1="297" y1="654" x2="297" y2="686" stroke="#ca8a04" stroke-width="1.6" marker-end="url(#pfeil)"/>
+  <line x1="711" y1="654" x2="711" y2="686" stroke="#ca8a04" stroke-width="1.6" marker-end="url(#pfeil)"/>
+
+  <!-- Secret -->
+  <rect x="98" y="758" width="804" height="44" rx="7" fill="#fef2f2" stroke="#dc2626" stroke-width="1.3"/>
+  <text x="116" y="777" font-size="11.5" font-weight="bold" fill="#991b1b">Secret zeiterfassung-secret (je Namespace)</text>
+  <text x="116" y="794" font-size="11" fill="#334155">SECRET_KEY und ZE_USERS (PBKDF2-Hashes) · zur Laufzeit erzeugt, nicht im Image und nicht im Git</text>
+
+  <!-- Verbindungen Arbeitsplatz -->
+  <path d="M 150 181 L 150 400 L 114 400" fill="none" stroke="#334155" stroke-width="1.8" marker-end="url(#pfeil)"/>
+  <rect x="58" y="196" width="238" height="38" rx="5" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="68" y="211" font-size="10.5" fill="#0f172a">kubectl port-forward :8080 → Service :80</text>
+  <text x="68" y="226" font-size="10.5" fill="#64748b">alternativ NodePort 192.168.110.60:30080</text>
+
+  <!-- Registry -> prod -->
+  <path d="M 810 181 L 810 300 L 790 300 L 790 486" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#pfeilGrau)"/>
+  <text x="818" y="250" font-size="10.5" fill="#64748b">docker pull</text>
+
+  <!-- Legende -->
+  <text x="40" y="862" font-size="10.5" fill="#64748b">Dev wird lokal im Browser getestet (NodePort). Prod ist nur clusterintern erreichbar (ClusterIP) und zusätzlich per NetworkPolicy eingeschränkt.</text>
+</svg>
