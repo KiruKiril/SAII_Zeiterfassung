@@ -28,6 +28,13 @@ Dokument — nicht verschweigen, wenn jemand fragt.
 
 Originalauftrag: `SAII_Tag4_final (1).pdf`
 
+### Zweiter Auftrag: Kurzplanung Arbeitspakete
+„GIT aufbauen + Kurzplanung Arbeitspakete" — Ablauf von der lokalen
+Entwicklung bis zur Alarmierung. Abgabe: `Gruppe3_26A_SAII_AblaufProjekt.docx`,
+Quelle dazu in `docs/Ablauf_Arbeitspakete.md`, Grafik `docs/Ablauf.svg`.
+Der Stand je Arbeitspaket (erledigt / teilweise / offen) ist dort ehrlich
+vermerkt — AP 3 lief auf lokalem minikube, nicht auf der LM.
+
 ---
 
 ## Aufbau des Repos
@@ -163,7 +170,7 @@ sind lehrreich:
 
 ## Wenn du als Claude hier weitermachst
 
-Lies zusätzlich `docs/PROJEKTVERLAUF.md` — dort steht chronologisch, was
+Lies zusätzlich `docs/PROJEKTVERLAUF.md` und `docs/Ablauf_Arbeitspakete.md` — dort steht chronologisch, was
 gemacht wurde und warum. Prüfe vor Empfehlungen, ob eine genannte Datei oder
 Funktion noch existiert; dieses Dokument beschreibt den Stand vom 6.11.2026.
 

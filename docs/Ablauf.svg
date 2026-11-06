@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 760" width="1600" height="760" font-family="Helvetica, Arial, sans-serif">
+<defs>
+  <marker id="a" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" fill="#141414"/></marker>
+  <marker id="ar" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" fill="#D92D20"/></marker>
+  <marker id="ag" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" fill="#15803D"/></marker>
+</defs>
+<rect width="1600" height="760" fill="#F2F1EC"/>
+
+<rect x="82" y="40" width="470" height="48" fill="#FFE812"/>
+<text x="92" y="76" font-size="32" font-weight="bold" font-style="italic" fill="#141414">Ablauf Arbeitspakete</text>
+<text x="92" y="116" font-size="14" fill="#444">Gruppe 3 &#183; Klasse 26A &#183; Projekt Zeiterfassung &#183; von der lokalen Entwicklung bis zur Alarmierung</text>
+
+<!-- Reihe 1 -->
+<rect x="92" y="156" width="250" height="118" rx="8" fill="#FFE812"/>
+<text x="110" y="182" font-size="12" font-weight="bold" fill="#8A7A00">AP 1</text>
+<text x="110" y="206" font-size="16" font-weight="bold" fill="#141414">Lokale Entwicklung</text>
+<text x="110" y="228" font-size="11.5" fill="#3A3A2A">App, Dockerfile, Manifeste</text>
+<text x="110" y="246" font-size="11.5" fill="#3A3A2A">Unit- und Funktionstests</text>
+<text x="110" y="264" font-size="11" fill="#6A6A3A">docker compose up</text>
+
+<path d="M 342 215 L 396 215" stroke="#141414" stroke-width="2.5" marker-end="url(#a)"/>
+
+<rect x="400" y="156" width="250" height="118" rx="8" fill="#141414"/>
+<text x="418" y="182" font-size="12" font-weight="bold" fill="#BFAE3A">AP 2</text>
+<text x="418" y="206" font-size="16" font-weight="bold" fill="#FFE812">Git-Repository</text>
+<text x="418" y="228" font-size="11.5" fill="#D8D8D8">Branches, Pull Requests</text>
+<text x="418" y="246" font-size="11.5" fill="#D8D8D8">Review vor dem Merge</text>
+<text x="418" y="264" font-size="11" fill="#9A9A9A">main bleibt lauffaehig</text>
+
+<path d="M 650 215 L 704 215" stroke="#141414" stroke-width="2.5" marker-end="url(#a)"/>
+
+<rect x="708" y="156" width="250" height="118" rx="8" fill="#FFE812"/>
+<text x="726" y="182" font-size="12" font-weight="bold" fill="#8A7A00">AP 3</text>
+<text x="726" y="206" font-size="16" font-weight="bold" fill="#141414">Rollout auf LM (Dev)</text>
+<text x="726" y="228" font-size="11.5" fill="#3A3A2A">Pull auf die LM, Image bauen</text>
+<text x="726" y="246" font-size="11.5" fill="#3A3A2A">kubectl apply -k overlays/dev</text>
+<text x="726" y="264" font-size="11" fill="#6A6A3A">minikube, Namespace ze-dev</text>
+
+<path d="M 958 215 L 1012 215" stroke="#141414" stroke-width="2.5" marker-end="url(#a)"/>
+
+<rect x="1016" y="156" width="250" height="118" rx="8" fill="#FFE812"/>
+<text x="1034" y="182" font-size="12" font-weight="bold" fill="#8A7A00">AP 4</text>
+<text x="1034" y="206" font-size="16" font-weight="bold" fill="#141414">Tests auf Dev</text>
+<text x="1034" y="228" font-size="11.5" fill="#3A3A2A">Funktion, Persistenz, Health</text>
+<text x="1034" y="246" font-size="11.5" fill="#3A3A2A">Security- und Rollenpruefung</text>
+<text x="1034" y="264" font-size="11" fill="#6A6A3A">Pod loeschen, Daten bleiben</text>
+
+<!-- Tor 1 -->
+<path d="M 1266 215 L 1316 215" stroke="#141414" stroke-width="2.5" marker-end="url(#a)"/>
+<rect x="1320" y="162" width="190" height="106" rx="8" fill="#FFFFFF" stroke="#15803D" stroke-width="2.5"/>
+<text x="1338" y="188" font-size="13" font-weight="bold" fill="#15803D">Qualitaetstor 1</text>
+<text x="1338" y="210" font-size="11.5" fill="#333">Alle Tests gruen?</text>
+<text x="1338" y="228" font-size="11.5" fill="#333">Persistenz belegt?</text>
+<text x="1338" y="246" font-size="11.5" fill="#333">Review erfolgt?</text>
+<text x="1338" y="262" font-size="10.5" fill="#777">sonst zurueck zu AP 1</text>
+
+<path d="M 1415 268 L 1415 300 L 217 300 L 217 278" fill="none" stroke="#D92D20" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#ar)"/>
+<text x="740" y="294" font-size="11" fill="#D92D20">Fehler gefunden &#8594; zurueck in die Entwicklung</text>
+
+<!-- Reihe 2 -->
+<path d="M 1415 162 L 1415 140 L 1550 140 L 1550 330 L 92 330 L 92 372" fill="none" stroke="#15803D" stroke-width="2.5" marker-end="url(#ag)"/>
+<text x="1428" y="133" font-size="11" fill="#15803D">bestanden</text>
+
+<rect x="92" y="380" width="250" height="118" rx="8" fill="#FFE812"/>
+<text x="110" y="406" font-size="12" font-weight="bold" fill="#8A7A00">AP 5</text>
+<text x="110" y="430" font-size="16" font-weight="bold" fill="#141414">Kundenumgebung</text>
+<text x="110" y="452" font-size="11.5" fill="#3A3A2A">Image in die Registry</text>
+<text x="110" y="470" font-size="11.5" fill="#3A3A2A">apply -k overlays/prod</text>
+<text x="110" y="488" font-size="11" fill="#6A6A3A">Secret, NetworkPolicy, 3 Replicas</text>
+
+<path d="M 342 439 L 396 439" stroke="#141414" stroke-width="2.5" marker-end="url(#a)"/>
+
+<rect x="400" y="380" width="250" height="118" rx="8" fill="#FFE812"/>
+<text x="418" y="406" font-size="12" font-weight="bold" fill="#8A7A00">AP 6</text>
+<text x="418" y="430" font-size="16" font-weight="bold" fill="#141414">Tests auf Prod</text>
+<text x="418" y="452" font-size="11.5" fill="#3A3A2A">Rauchtest nach dem Rollout</text>
+<text x="418" y="470" font-size="11.5" fill="#3A3A2A">Rollback geprobt</text>
+<text x="418" y="488" font-size="11" fill="#6A6A3A">Daten bleiben erhalten</text>
+
+<path d="M 650 439 L 704 439" stroke="#141414" stroke-width="2.5" marker-end="url(#a)"/>
+
+<rect x="708" y="380" width="250" height="118" rx="8" fill="#FFE812" opacity="0.6"/>
+<text x="726" y="406" font-size="12" font-weight="bold" fill="#8A7A00">AP 7</text>
+<text x="726" y="430" font-size="16" font-weight="bold" fill="#141414">Monitoring</text>
+<text x="726" y="452" font-size="11.5" fill="#3A3A2A">/health und /ready abfragen</text>
+<text x="726" y="470" font-size="11.5" fill="#3A3A2A">Metriken, Dashboards, Logs</text>
+<text x="726" y="488" font-size="11" fill="#D92D20">noch nicht umgesetzt</text>
+
+<path d="M 958 439 L 1012 439" stroke="#141414" stroke-width="2.5" marker-end="url(#a)"/>
+
+<rect x="1016" y="380" width="250" height="118" rx="8" fill="#FFE812" opacity="0.6"/>
+<text x="1034" y="406" font-size="12" font-weight="bold" fill="#8A7A00">AP 8</text>
+<text x="1034" y="430" font-size="16" font-weight="bold" fill="#141414">Alarmierung</text>
+<text x="1034" y="452" font-size="11.5" fill="#3A3A2A">Schwellwerte und Regeln</text>
+<text x="1034" y="470" font-size="11.5" fill="#3A3A2A">Kanal fuer das Betriebsteam</text>
+<text x="1034" y="488" font-size="11" fill="#D92D20">noch nicht umgesetzt</text>
+
+<!-- Tor 2 -->
+<path d="M 1266 439 L 1316 439" stroke="#141414" stroke-width="2.5" marker-end="url(#a)"/>
+<rect x="1320" y="386" width="190" height="106" rx="8" fill="#FFFFFF" stroke="#15803D" stroke-width="2.5"/>
+<text x="1338" y="412" font-size="13" font-weight="bold" fill="#15803D">Qualitaetstor 2</text>
+<text x="1338" y="434" font-size="11.5" fill="#333">Betrieb uebergeben?</text>
+<text x="1338" y="452" font-size="11.5" fill="#333">Alarm getestet?</text>
+<text x="1338" y="470" font-size="11.5" fill="#333">Doku vollstaendig?</text>
+<text x="1338" y="486" font-size="10.5" fill="#777">dann Abnahme</text>
+
+<!-- Querschnitt -->
+<rect x="92" y="540" width="1418" height="92" rx="8" fill="#141414"/>
+<text x="112" y="568" font-size="15" font-weight="bold" fill="#FFE812">Laeuft ueber alle Pakete mit</text>
+<text x="112" y="592" font-size="12" fill="#D8D8D8">Dokumentation wird mit dem Code gepflegt (README, CLAUDE.md, Projektverlauf) &#183; jede Aenderung ueber einen Branch und ein Review</text>
+<text x="112" y="613" font-size="12" fill="#D8D8D8">Secrets nie im Repository &#183; kein Arbeitspaket gilt als fertig ohne Nachweis (Testlauf, Logzeile oder Screenshot)</text>
+
+<!-- Legende -->
+<rect x="92" y="654" width="1418" height="44" rx="6" fill="#FFFFFF" stroke="#CFCFC8"/>
+<rect x="110" y="668" width="24" height="16" fill="#FFE812"/>
+<text x="142" y="681" font-size="11.5" fill="#141414">Arbeitspaket umgesetzt</text>
+<rect x="300" y="668" width="24" height="16" fill="#FFE812" opacity="0.6"/>
+<text x="332" y="681" font-size="11.5" fill="#141414">Arbeitspaket geplant</text>
+<rect x="470" y="668" width="24" height="16" fill="#141414"/>
+<text x="502" y="681" font-size="11.5" fill="#141414">Werkzeug / Querschnitt</text>
+<line x1="672" y1="676" x2="716" y2="676" stroke="#15803D" stroke-width="2.5" marker-end="url(#ag)"/>
+<text x="726" y="681" font-size="11.5" fill="#141414">Freigabe nach bestandenem Tor</text>
+<line x1="950" y1="676" x2="994" y2="676" stroke="#D92D20" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#ar)"/>
+<text x="1004" y="681" font-size="11.5" fill="#141414">Rueckweg bei Fehlern</text>
+<text x="1200" y="681" font-size="11" fill="#666">Stand 06.11.2026</text>
+</svg>

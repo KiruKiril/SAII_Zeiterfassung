@@ -22,6 +22,8 @@ Entscheidungen und die Fehler, die schon einmal auftraten.
 | [`CLAUDE.md`](CLAUDE.md) | Kontext für eine neue Chat-Sitzung — **zuerst lesen** |
 | [`docs/PROJEKTVERLAUF.md`](docs/PROJEKTVERLAUF.md) | Chronologie: was wurde gemacht und warum |
 | [`docs/Abgabe_Zeiterfassung.docx`](docs/Abgabe_Zeiterfassung.docx) | Das Abgabe-Dokument (SOLL, Security, Healthchecks) |
+| [`docs/Ablauf_Arbeitspakete.md`](docs/Ablauf_Arbeitspakete.md) | Ablauf und Arbeitspakete der Gruppe |
+| [`Gruppe3_26A_SAII_AblaufProjekt.docx`](Gruppe3_26A_SAII_AblaufProjekt.docx) | Abgabe zur Kurzplanung |
 | [`docs/Netzwerkplan.svg`](docs/Netzwerkplan.svg) | Netzwerkplan im Original |
 | [`docs/bilder/`](docs/bilder/) | Screenshots der laufenden Anwendung |
 
