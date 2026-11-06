@@ -6,6 +6,33 @@ Flask-Zeiterfassung mit `EIN / PAUSE / ZURÜCK / AUS`, Persistenz über ein
 PersistentVolumeClaim, getrennten Healthchecks, Login mit Rollen und
 Kustomize-Overlays für dev und prod.
 
+![Netzwerkplan](docs/bilder/00-netzwerkplan.jpg)
+
+---
+
+## Für die Gruppe: hier einsteigen
+
+Wer mit Claude Code an diesem Projekt weiterarbeitet, bekommt den ganzen
+Kontext automatisch — `CLAUDE.md` wird beim Öffnen des Repos geladen. Darin
+stehen Aufbau, Zugangsdaten, Startbefehle, die Begründungen hinter den
+Entscheidungen und die Fehler, die schon einmal auftraten.
+
+| Datei | Wofür |
+|---|---|
+| [`CLAUDE.md`](CLAUDE.md) | Kontext für eine neue Chat-Sitzung — **zuerst lesen** |
+| [`docs/PROJEKTVERLAUF.md`](docs/PROJEKTVERLAUF.md) | Chronologie: was wurde gemacht und warum |
+| [`docs/Abgabe_Zeiterfassung.docx`](docs/Abgabe_Zeiterfassung.docx) | Das Abgabe-Dokument (SOLL, Security, Healthchecks) |
+| [`docs/Netzwerkplan.svg`](docs/Netzwerkplan.svg) | Netzwerkplan im Original |
+| [`docs/bilder/`](docs/bilder/) | Screenshots der laufenden Anwendung |
+
+So steigst du ein:
+
+```bash
+git clone https://github.com/KiruKiril/SAII_Zeiterfassung.git
+cd SAII_Zeiterfassung
+claude            # CLAUDE.md wird automatisch geladen
+```
+
 ---
 
 ## Für die Bewertung: in einem Befehl starten
@@ -98,6 +125,14 @@ Zustandsübergänge, unerlaubter Doppelübergang (409), unbekannte Aktion (400),
 JSONL-Persistenz, XSS-Escaping, Längenbegrenzung, RBAC (user → 403,
 admin → 200), Sicherheitsheader, `/ready` → 503 bei kaputtem Datenpfad bei
 gleichzeitig gesundem `/health`, Admin-Korrekturen und -Loeschungen.
+
+## Oberfläche
+
+| Stempeln | Admin-Ansicht | Löschen |
+|---|---|---|
+| ![Stempeln](docs/bilder/01-stempeln.jpg) | ![Admin](docs/bilder/02-admin-filter.jpg) | ![Löschen](docs/bilder/03-loeschen-rueckfrage.jpg) |
+
+---
 
 ## Admin-Ansicht
 
